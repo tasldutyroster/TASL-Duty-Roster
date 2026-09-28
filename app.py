@@ -114,11 +114,10 @@ else:
 st.markdown(get_app_styles(cal_palette, font_size), unsafe_allow_html=True)
 
 def render_styled_html_table(df, month_name=None):
-    """Renders a gorgeous, professional HTML table with light gray background and crisp black grid borders"""
-    base_rosters_dict = generate_infinite_rosters(st.session_state.get("staff_registry"))
-    base_df = base_rosters_dict.get(month_name, df) if month_name else df
-    
-    # Filter out employees whose last working day has passed prior to this month view
+    """Renders a gorgeous, professional HTML table and highlights strictly swapped shifts using swap_tracking.json"""
+    swap_tracking = st.session_state.get("swap_data", {})
+    month_swaps = swap_tracking.get(month_name, {}) if month_name else {}
+
     if month_name and not df.empty:
         try:
             m_date = datetime.strptime(month_name, "%B %Y")
@@ -154,12 +153,8 @@ def render_styled_html_table(df, month_name=None):
         row_bg = "#F8FAFC" if idx % 2 == 0 else "#FFFFFF"
         html += f'<tr style="background-color: {row_bg}; transition: background 0.2s ease;">'
         
-        emp_name = row[emp_col_name]
-        base_row = None
-        if month_name:
-            b_match = base_df[base_df[base_df.columns[0]] == emp_name]
-            if not b_match.empty:
-                base_row = b_match.iloc[0]
+        emp_name = str(row[emp_col_name]).strip().upper()
+        emp_swapped_dates = month_swaps.get(emp_name, [])
                 
         for col in df.columns:
             val = row[col] if pd.notna(row[col]) else ""
@@ -169,18 +164,15 @@ def render_styled_html_table(df, month_name=None):
             cell_bg = ""
             cell_extra = ""
             
-            if col != emp_col_name and base_row is not None and col in base_row.index:
-                b_val = str(base_row[col]).strip() if pd.notna(base_row[col]) else ""
-                if b_val == 'nan': b_val = ""
-                
-                if val_str != b_val:
-                    if val_str in ["LEAVE", "SICK"]:
-                        cell_bg = "background-color: #FEE2E2; color: #DC2626;"
-                    elif val_str == "HOLIDAY":
-                        cell_bg = "background-color: #D1FAE5; color: #059669;"
-                    else:
-                        cell_bg = "background-color: #DBEAFE; color: #1D4ED8;"
-                        cell_extra = ' <span style="font-size:0.75rem; font-weight:800;" title="Swapped Shift">(S)</span>'
+            if col != emp_col_name:
+                col_str = str(col).strip()
+                if val_str in ["LEAVE", "SICK"]:
+                    cell_bg = "background-color: #FEE2E2; color: #DC2626;"
+                elif val_str == "HOLIDAY":
+                    cell_bg = "background-color: #D1FAE5; color: #059669;"
+                elif col_str in emp_swapped_dates:
+                    cell_bg = "background-color: #DBEAFE; color: #1D4ED8;"
+                    cell_extra = ' <span style="font-size:0.75rem; font-weight:800;" title="Swapped Shift">(S)</span>'
             
             html += f'<td style="padding: 8px 12px; border: 1px solid #000000; font-weight: 600; {cell_bg}">{val_str}{cell_extra}</td>'
         html += '</tr>'
@@ -574,36 +566,14 @@ elif current_view == "Duty Roster":
                 cal_val2 = st.date_input("Date Person B works for Person A:", value=min_d, min_value=min_d, max_value=max_d, key="sw_d2_cal")
                 swap_date2 = str(cal_val2.day)
             
-            def count_employee_swaps(month_name, employee_name):
-                if month_name not in sheets_dict:
-                    return 0
-                m_df = sheets_dict[month_name]
-                base_rosters_dict = generate_infinite_rosters(st.session_state.get("staff_registry"))
-                b_df = base_rosters_dict.get(month_name, m_df)
-                
-                emp_r_idx = m_df[m_df[m_df.columns[0]] == employee_name].index
-                b_r_idx = b_df[b_df[b_df.columns[0]] == employee_name].index
-                
-                if len(emp_r_idx) == 0 or len(b_r_idx) == 0:
-                    return 0
-                    
-                curr_row = m_df.loc[emp_r_idx[0]]
-                base_row = b_df.loc[b_r_idx[0]]
-                d_cols = [str(c) for c in m_df.columns[1:]]
-                
-                mod_count = 0
-                for d in d_cols:
-                    if d in base_row.index:
-                        c_val = str(curr_row[d]).strip() if pd.notna(curr_row[d]) else ""
-                        b_val = str(base_row[d]).strip() if pd.notna(base_row[d]) else ""
-                        if c_val == 'nan': c_val = ""
-                        if b_val == 'nan': b_val = ""
-                        if c_val != b_val and c_val not in ["LEAVE", "SICK", "HOLIDAY"]:
-                            mod_count += 1
-                return min(2, mod_count)
-
-            emp1_swaps = count_employee_swaps(act_month, swap_emp1)
-            emp2_swaps = count_employee_swaps(act_month, swap_emp2)
+            # Persistent swap tracking per person per month
+            swap_tracking = st.session_state.get("swap_data", {})
+            m_swaps = swap_tracking.setdefault(act_month, {})
+            emp1_swaps_list = m_swaps.setdefault(str(swap_emp1).strip().upper(), [])
+            emp2_swaps_list = m_swaps.setdefault(str(swap_emp2).strip().upper(), [])
+            
+            emp1_swaps = len(emp1_swaps_list)
+            emp2_swaps = len(emp2_swaps_list)
             
             st.markdown(f"""
             <div style="background-color: rgba(0, 102, 204, 0.05); border: 1px solid #CBD5E1; padding: 10px 16px; border-radius: 8px; margin-bottom: 12px; font-size:{font_size};">
@@ -619,11 +589,11 @@ elif current_view == "Duty Roster":
             val2_A_curr = act_df.loc[act_df[emp_col] == swap_emp1, swap_date2].values[0]
             val2_B_curr = act_df.loc[act_df[emp_col] == swap_emp2, swap_date2].values[0]
             
-            s1_a = val1_A_curr if str(val1_A_curr).strip() else "OFF"
-            s1_b = val1_B_curr if str(val1_B_curr).strip() else "OFF"
+            s1_a = str(val1_A_curr).strip() if pd.notna(val1_A_curr) and str(val1_A_curr).strip() != 'nan' else "OFF"
+            s1_b = str(val1_B_curr).strip() if pd.notna(val1_B_curr) and str(val1_B_curr).strip() != 'nan' else "OFF"
             
-            s2_a = val2_A_curr if str(val2_A_curr).strip() else "OFF"
-            s2_b = val2_B_curr if str(val2_B_curr).strip() else "OFF"
+            s2_a = str(val2_A_curr).strip() if pd.notna(val2_A_curr) and str(val2_A_curr).strip() != 'nan' else "OFF"
+            s2_b = str(val2_B_curr).strip() if pd.notna(val2_B_curr) and str(val2_B_curr).strip() != 'nan' else "OFF"
             
             bg_col = "#1E293B" if is_dark else "#F1F5F9"
             txt_col = "#FFFFFF" if is_dark else "#0F172A"
@@ -645,14 +615,25 @@ elif current_view == "Duty Roster":
                     act_df.loc[act_df[emp_col] == swap_emp1, swap_date1] = val1_B
                     act_df.loc[act_df[emp_col] == swap_emp2, swap_date1] = val1_A
                     
+                    e1_upper = str(swap_emp1).strip().upper()
+                    e2_upper = str(swap_emp2).strip().upper()
+                    
+                    if swap_date1 not in m_swaps[e1_upper]: m_swaps[e1_upper].append(swap_date1)
+                    if swap_date1 not in m_swaps[e2_upper]: m_swaps[e2_upper].append(swap_date1)
+                    
                     if swap_date1 != swap_date2:
                         val2_A = act_df.loc[act_df[emp_col] == swap_emp1, swap_date2].values[0]
                         val2_B = act_df.loc[act_df[emp_col] == swap_emp2, swap_date2].values[0]
                         act_df.loc[act_df[emp_col] == swap_emp1, swap_date2] = val2_B
                         act_df.loc[act_df[emp_col] == swap_emp2, swap_date2] = val2_A
+                        
+                        if swap_date2 not in m_swaps[e1_upper]: m_swaps[e1_upper].append(swap_date2)
+                        if swap_date2 not in m_swaps[e2_upper]: m_swaps[e2_upper].append(swap_date2)
                     
                     st.session_state["sheets_dict"][act_month] = act_df
+                    st.session_state["swap_data"] = swap_tracking
                     save_rosters(st.session_state["sheets_dict"])
+                    save_swaps(swap_tracking)
                     
                     st.toast(f"✅ Success! Shifts successfully swapped between {swap_emp1} and {swap_emp2}.", icon="🎉")
                     st.success(f"✅ Shifts successfully swapped between **{swap_emp1}** and **{swap_emp2}**!")
@@ -826,7 +807,6 @@ elif current_view == "Settings":
                     st.markdown(f'<p style="font-size:{font_size}; font-weight:700; margin-bottom:4px;">Designation (Staff Type):</p>', unsafe_allow_html=True)
                     new_desig = st.radio("Designation", ["Officer", "Network Engineer", "Engineer Incharge"], label_visibility="collapsed")
                 
-                # --- NEW SECTION: REPLACEMENT vs NEW POSITION ---
                 st.markdown("##### Position & Replacement Mapping")
                 col_pos1, col_pos2 = st.columns(2)
                 with col_pos1:
@@ -837,7 +817,6 @@ elif current_view == "Settings":
                     with col_pos2:
                         active_staff_names = [s["name"] for s in st.session_state["staff_registry"]]
                         replaced_emp_name = st.selectbox("Select the Staff Being Replaced:", [""] + active_staff_names)
-                # ------------------------------------------------
                     
                 new_photo = st.file_uploader("Passport Size Photograph (.png, .jpg)", type=["png", "jpg", "jpeg"], key="new_staff_photo")
                 
@@ -1006,59 +985,35 @@ elif current_view == "Settings":
                 emp_col_name = clr_df.columns[0]
                 emp_list = clr_df[emp_col_name].dropna().tolist()
                 
-                base_rosters = generate_infinite_rosters(st.session_state.get("staff_registry"))
-                base_df = base_rosters.get(clr_month, clr_df)
+                swap_tracking = st.session_state.get("swap_data", {})
+                m_swaps = swap_tracking.get(clr_month, {})
                 
                 total_mods = 0
-                
-                for emp in emp_list:
-                    emp_idx_curr = clr_df[clr_df[emp_col_name] == emp].index
-                    emp_idx_base = base_df[base_df[base_df.columns[0]] == emp].index
-                    
-                    if len(emp_idx_curr) > 0 and len(emp_idx_base) > 0:
-                        curr_row = clr_df.loc[emp_idx_curr[0]]
-                        base_row = base_df.loc[emp_idx_base[0]]
-                        date_cols = [str(c) for c in clr_df.columns[1:]]
-                        
-                        modifications = []
-                        for d in date_cols:
-                            if d in base_row.index:
-                                c_val = str(curr_row[d]).strip() if pd.notna(curr_row[d]) else ""
-                                b_val = str(base_row[d]).strip() if pd.notna(base_row[d]) else ""
-                                
-                                if c_val == 'nan': c_val = ""
-                                if b_val == 'nan': b_val = ""
-                                
-                                if c_val != b_val:
-                                    modifications.append((d, b_val, c_val))
-                                    
-                        if modifications:
-                            total_mods += len(modifications)
-                            st.markdown(f"##### 👤 {emp}")
-                            for mod in modifications:
-                                d, b_val, c_val = mod
-                                disp_b = b_val if b_val else "OFF"
-                                disp_c = c_val if c_val else "OFF"
-                                
-                                col_text, col_btn = st.columns([4.5, 1.5])
-                                with col_text:
-                                    st.markdown(f"""
-                                    <div style="padding: 8px 12px; border-left: 4px solid #EF4444; background: #FFFFFF; border: 1px solid #CBD5E1; border-left-color: #EF4444; border-radius: 6px; margin-bottom: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.03);">
-                                        <span style="font-size: 1rem; font-weight: 800; color: #0F172A; margin-right: 10px;">Date {d}</span>
-                                        <span style="color: #64748B; font-weight: 600; font-size: 0.9rem;">Original: <span style="text-decoration: line-through;">{disp_b}</span> &nbsp;➔&nbsp; <span style="color: #EF4444; font-weight: 800;">{disp_c}</span></span>
-                                    </div>
-                                    """, unsafe_allow_html=True)
-                                with col_btn:
-                                    if st.button("🔄 Revert", key=f"rev_{emp}_{d}", use_container_width=True):
-                                        clr_df.loc[emp_idx_curr[0], d] = b_val if b_val else ""
-                                        st.session_state["sheets_dict"][clr_month] = clr_df
-                                        save_rosters(st.session_state["sheets_dict"])
-                                        st.toast(f"✅ Reverted Date {d} for {emp}!", icon="🔄")
-                                        st.success(f"Reverted Date {d} for {emp} back to {disp_b}!")
-                                        st.rerun()
-                                        
+                for emp, dates in m_swaps.items():
+                    if dates:
+                        total_mods += len(dates)
+                        st.markdown(f"##### 👤 {emp}")
+                        for d in dates:
+                            col_text, col_btn = st.columns([4.5, 1.5])
+                            with col_text:
+                                st.markdown(f"""
+                                <div style="padding: 8px 12px; border-left: 4px solid #0066CC; background: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 6px; margin-bottom: 6px;">
+                                    <span style="font-size: 1rem; font-weight: 800; color: #0F172A; margin-right: 10px;">Date {d}</span>
+                                    <span style="color: #0066CC; font-weight: 700; font-size: 0.9rem;">Swapped Shift (S)</span>
+                                </div>
+                                """, unsafe_allow_html=True)
+                            with col_btn:
+                                if st.button("🔄 Clear Swap", key=f"rev_swap_{emp}_{d}", use_container_width=True):
+                                    if d in m_swaps[emp]:
+                                        m_swaps[emp].remove(d)
+                                    st.session_state["swap_data"] = swap_tracking
+                                    save_swaps(swap_tracking)
+                                    st.toast(f"✅ Cleared swap on Date {d} for {emp}!", icon="🔄")
+                                    st.success(f"Cleared swap on Date {d} for {emp}!")
+                                    st.rerun()
+
                 if total_mods == 0:
-                    st.success(f"✅ No modified shifts or leaves found in **{clr_month}**. All staff are strictly following the standard roster.")
+                    st.success(f"✅ No active shift swaps found in **{clr_month}**.")
 
         elif curr_settings_sub == "Banner":
             st.markdown("#### App Display Settings & Corporate Banner")
@@ -1111,12 +1066,16 @@ elif current_view == "Settings":
             st.write("---")
             
             st.markdown("##### ⚠️ Rebuild Calendar Data Matrix")
-            st.error("Clicking this button will completely regenerate the Shift Calendar applying all new Staff Rules (e.g. Network Engineer General shifts). Previous manual shift swaps and leaves marked may be lost.")
+            st.error("Clicking this button will completely regenerate the Shift Calendar applying all new Staff Rules. Previous manual shift swaps and leaves marked may be lost.")
             if st.button("🔄 Force Rebuild Roster Data"):
                 if os.path.exists(ROSTER_STORAGE_PATH):
                     os.remove(ROSTER_STORAGE_PATH)
+                if os.path.exists(SWAPS_STORAGE_PATH):
+                    os.remove(SWAPS_STORAGE_PATH)
                 st.session_state["sheets_dict"] = generate_infinite_rosters(st.session_state["staff_registry"])
+                st.session_state["swap_data"] = {}
                 save_rosters(st.session_state["sheets_dict"])
+                save_swaps({})
                 st.toast("🔄 Rosters completely rebuilt!", icon="⚙️")
-                st.success("Rosters completely rebuilt applying new Staff rules!")
+                st.success("Rosters completely rebuilt and reset successfully!")
                 st.rerun()
