@@ -131,7 +131,6 @@ def render_styled_html_table(df, month_name=None):
                     if s["name"].strip().upper() == emp_n and s.get("last_day"):
                         try:
                             l_d = datetime.strptime(s["last_day"], "%Y-%m-%d")
-                            # If the last working day is strictly before the start of this month view, skip them entirely
                             if l_d.date() < m_date.date():
                                 include_emp = False
                         except: pass
@@ -143,13 +142,11 @@ def render_styled_html_table(df, month_name=None):
     html = '<div style="overflow-x: auto; border: 2px solid #000000; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); background-color: #F8FAFC; margin-bottom: 0.5rem;">'
     html += f'<table style="width: 100%; border-collapse: collapse; font-family: \'Plus Jakarta Sans\', sans-serif; font-size: {font_size};">'
     
-    # Header
     html += '<thead><tr style="background-color: #E2E8F0; border-bottom: 2px solid #000000;">'
     for col in df.columns:
         html += f'<th style="padding: 10px 12px; border: 1px solid #000000; color: #000000; font-weight: 800; text-align: left;">{col}</th>'
     html += '</tr></thead>'
     
-    # Body
     html += '<tbody>'
     emp_col_name = df.columns[0]
     
@@ -290,12 +287,10 @@ if current_view == "Dashboard":
             today_sub.columns = ["Employee", "Shift"]
             today_sub["Shift"] = today_sub["Shift"].astype(str).str.strip().str.upper()
 
-            # Filter out staff whose last working day has passed before the selected dashboard date
             filtered_rows = []
             for _, r in today_sub.iterrows():
                 emp_n = str(r["Employee"]).strip().upper()
                 is_allowed = True
-                
                 for staff in st.session_state["staff_registry"]:
                     if staff["name"].strip().upper() == emp_n:
                         last_day_str = staff.get("last_day", "")
@@ -378,7 +373,6 @@ if current_view == "Dashboard":
             compliance_alerts = []
             
             for staff in st.session_state["staff_registry"]:
-                # Evaluate dynamic status
                 res_date_str = staff.get('last_day', '')
                 is_active = staff["status"] == "Active"
                 if res_date_str:
@@ -710,7 +704,6 @@ elif current_view == "AEP Tracker":
     comp_data = []
     today_real_date = datetime.now().date()
     for s in st.session_state["staff_registry"]:
-        # Evaluate dynamic active status
         res_date_str = s.get('last_day', '')
         is_active = s["status"] == "Active"
         if res_date_str:
@@ -832,6 +825,19 @@ elif current_view == "Settings":
                 with col_reg3:
                     st.markdown(f'<p style="font-size:{font_size}; font-weight:700; margin-bottom:4px;">Designation (Staff Type):</p>', unsafe_allow_html=True)
                     new_desig = st.radio("Designation", ["Officer", "Network Engineer", "Engineer Incharge"], label_visibility="collapsed")
+                
+                # --- NEW SECTION: REPLACEMENT vs NEW POSITION ---
+                st.markdown("##### Position & Replacement Mapping")
+                col_pos1, col_pos2 = st.columns(2)
+                with col_pos1:
+                    pos_type = st.radio("Is this a new position or a replacement?", ["Completely New Addition", "Replacement for Resigning Staff"])
+                
+                replaced_emp_name = ""
+                if pos_type == "Replacement for Resigning Staff":
+                    with col_pos2:
+                        active_staff_names = [s["name"] for s in st.session_state["staff_registry"]]
+                        replaced_emp_name = st.selectbox("Select the Staff Being Replaced:", [""] + active_staff_names)
+                # ------------------------------------------------
                     
                 new_photo = st.file_uploader("Passport Size Photograph (.png, .jpg)", type=["png", "jpg", "jpeg"], key="new_staff_photo")
                 
@@ -855,31 +861,35 @@ elif current_view == "Settings":
                     
                 if st.button("Register Staff & Initialize Training", type="primary"):
                     if new_name.strip():
-                        photo_b64 = None
-                        if new_photo:
-                            b_bytes = new_photo.getvalue()
-                            photo_b64 = f"data:{new_photo.type or 'image/png'};base64,{base64.b64encode(b_bytes).decode('utf-8')}"
-                            
-                        st.session_state["staff_registry"].append({
-                            "name": new_name.strip().upper(),
-                            "emp_id": new_emp_id.strip().upper(),
-                            "designation": new_desig,
-                            "aep_no": new_aep_n.strip().upper(),
-                            "photo": photo_b64,
-                            "status": "Active",
-                            "last_day": "",
-                            "training_start": t_start.strftime("%Y-%m-%d"),
-                            "training_end": t_end.strftime("%Y-%m-%d"),
-                            "aep_issue": new_aep_iss.strftime("%Y-%m-%d"),
-                            "aep_expiry": new_aep_exp.strftime("%Y-%m-%d"),
-                            "pcc_expiry": new_pcc_exp.strftime("%Y-%m-%d"),
-                            "avsec_date": new_avsec_d.strftime("%Y-%m-%d"),
-                            "avsec_validity": new_avsec_exp.strftime("%Y-%m-%d")
-                        })
-                        save_staff_registry(st.session_state["staff_registry"])
-                        st.toast("🎉 Staff registered successfully!", icon="🚀")
-                        st.success(f"🎉 New personnel **{new_name.strip().upper()}** registered successfully!")
-                        st.rerun()
+                        if pos_type == "Replacement for Resigning Staff" and not replaced_emp_name:
+                            st.error("Please select the staff member being replaced.")
+                        else:
+                            photo_b64 = None
+                            if new_photo:
+                                b_bytes = new_photo.getvalue()
+                                photo_b64 = f"data:{new_photo.type or 'image/png'};base64,{base64.b64encode(b_bytes).decode('utf-8')}"
+                                
+                            st.session_state["staff_registry"].append({
+                                "name": new_name.strip().upper(),
+                                "emp_id": new_emp_id.strip().upper(),
+                                "designation": new_desig,
+                                "replaced_emp": replaced_emp_name if pos_type == "Replacement for Resigning Staff" else "",
+                                "aep_no": new_aep_n.strip().upper(),
+                                "photo": photo_b64,
+                                "status": "Active",
+                                "last_day": "",
+                                "training_start": t_start.strftime("%Y-%m-%d"),
+                                "training_end": t_end.strftime("%Y-%m-%d"),
+                                "aep_issue": new_aep_iss.strftime("%Y-%m-%d"),
+                                "aep_expiry": new_aep_exp.strftime("%Y-%m-%d"),
+                                "pcc_expiry": new_pcc_exp.strftime("%Y-%m-%d"),
+                                "avsec_date": new_avsec_d.strftime("%Y-%m-%d"),
+                                "avsec_validity": new_avsec_exp.strftime("%Y-%m-%d")
+                            })
+                            save_staff_registry(st.session_state["staff_registry"])
+                            st.toast("🎉 Staff registered successfully!", icon="🚀")
+                            st.success(f"🎉 New personnel **{new_name.strip().upper()}** registered successfully!")
+                            st.rerun()
                     else:
                         st.error("Please enter a valid staff name.")
 
@@ -887,7 +897,6 @@ elif current_view == "Settings":
             st.markdown("#### Manage Current Staff (Photos, ID, Resignation)")
             
             for idx, staff in enumerate(st.session_state["staff_registry"]):
-                # Determine dynamic status based on last working day
                 today_real_date = datetime.now().date()
                 res_date_str = staff.get('last_day', '')
                 is_actually_resigned = False
