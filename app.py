@@ -118,6 +118,28 @@ def render_styled_html_table(df, month_name=None):
     base_rosters_dict = generate_infinite_rosters(st.session_state.get("staff_registry"))
     base_df = base_rosters_dict.get(month_name, df) if month_name else df
     
+    # Filter out employees whose last working day has passed prior to this month view
+    if month_name and not df.empty:
+        try:
+            m_date = datetime.strptime(month_name, "%B %Y")
+            valid_rows = []
+            emp_col_n = df.columns[0]
+            for _, row in df.iterrows():
+                emp_n = str(row[emp_col_n]).strip().upper()
+                include_emp = True
+                for s in st.session_state.get("staff_registry", []):
+                    if s["name"].strip().upper() == emp_n and s.get("last_day"):
+                        try:
+                            l_d = datetime.strptime(s["last_day"], "%Y-%m-%d")
+                            # If the last working day is strictly before the start of this month view, skip them entirely
+                            if l_d.date() < m_date.date():
+                                include_emp = False
+                        except: pass
+                if include_emp:
+                    valid_rows.append(row)
+            df = pd.DataFrame(valid_rows)
+        except: pass
+    
     html = '<div style="overflow-x: auto; border: 2px solid #000000; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); background-color: #F8FAFC; margin-bottom: 0.5rem;">'
     html += f'<table style="width: 100%; border-collapse: collapse; font-family: \'Plus Jakarta Sans\', sans-serif; font-size: {font_size};">'
     
@@ -267,6 +289,26 @@ if current_view == "Dashboard":
             today_sub = live_df[[emp_col, current_day_int]].dropna(subset=[emp_col]).copy()
             today_sub.columns = ["Employee", "Shift"]
             today_sub["Shift"] = today_sub["Shift"].astype(str).str.strip().str.upper()
+
+            # Filter out staff whose last working day has passed before the selected dashboard date
+            filtered_rows = []
+            for _, r in today_sub.iterrows():
+                emp_n = str(r["Employee"]).strip().upper()
+                is_allowed = True
+                
+                for staff in st.session_state["staff_registry"]:
+                    if staff["name"].strip().upper() == emp_n:
+                        last_day_str = staff.get("last_day", "")
+                        if last_day_str:
+                            try:
+                                l_date = datetime.strptime(last_day_str, "%Y-%m-%d").date()
+                                if dash_date > l_date:
+                                    is_allowed = False
+                            except: pass
+                if is_allowed:
+                    filtered_rows.append(r)
+            
+            today_sub = pd.DataFrame(filtered_rows) if filtered_rows else pd.DataFrame(columns=["Employee", "Shift"])
             
             t_day = today_sub[today_sub["Shift"] == "A"]
             t_gen = today_sub[today_sub["Shift"] == "G"]
