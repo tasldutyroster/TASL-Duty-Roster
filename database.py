@@ -1,138 +1,186 @@
-import os
-import json
-import base64
-from datetime import datetime
 import pandas as pd
-import numpy as np
+import json
+import pickle
+import os
+from datetime import datetime, timedelta
 import calendar
 
+# ==============================================================================
+# CONSTANTS & FILE PATHS
+# ==============================================================================
+STAFF_REGISTRY_PATH = "staff_registry_storage.json"
+ROSTER_STORAGE_PATH = "roster_storage_v2.pkl"
+SWAPS_STORAGE_PATH = "swap_tracking.json"
 BANNER_CACHE_PATH = "banner_cache.b64"
-STAFF_STORAGE_PATH = "staff_registry_storage.json"
-ROSTER_STORAGE_PATH = "roster_storage_v2.pkl"  
-SWAP_STORAGE_PATH = "swap_tracking.json"    
-SETTINGS_PASSWORD = "0477"  
+SETTINGS_PASSWORD = "123" # Adjust your admin PIN here
 
-DEFAULT_STAFF = [
-    {"name": "MAHESH", "emp_id": "", "designation": "Officer", "aep_no": "", "pcc_expiry": "", "avsec_date": "", "avsec_validity": "", "photo": None, "status": "Active", "last_day": "", "training_start": "", "training_end": "", "aep_issue": "", "aep_expiry": ""},
-    {"name": "AJITH", "emp_id": "", "designation": "Officer", "aep_no": "", "pcc_expiry": "", "avsec_date": "", "avsec_validity": "", "photo": None, "status": "Active", "last_day": "", "training_start": "", "training_end": "", "aep_issue": "", "aep_expiry": ""},
-    {"name": "BALU", "emp_id": "", "designation": "Officer", "aep_no": "", "pcc_expiry": "", "avsec_date": "", "avsec_validity": "", "photo": None, "status": "Active", "last_day": "", "training_start": "", "training_end": "", "aep_issue": "", "aep_expiry": ""},
-    {"name": "SHINE", "emp_id": "", "designation": "Officer", "aep_no": "", "pcc_expiry": "", "avsec_date": "", "avsec_validity": "", "photo": None, "status": "Active", "last_day": "", "training_start": "", "training_end": "", "aep_issue": "", "aep_expiry": ""},
-    {"name": "NAVANEETH", "emp_id": "", "designation": "Officer", "aep_no": "", "pcc_expiry": "", "avsec_date": "", "avsec_validity": "", "photo": None, "status": "Active", "last_day": "", "training_start": "", "training_end": "", "aep_issue": "", "aep_expiry": ""},
-    {"name": "AMAL", "emp_id": "", "designation": "Officer", "aep_no": "", "pcc_expiry": "", "avsec_date": "", "avsec_validity": "", "photo": None, "status": "Active", "last_day": "", "training_start": "", "training_end": "", "aep_issue": "", "aep_expiry": ""},
-    {"name": "SHYAM", "emp_id": "", "designation": "Officer", "aep_no": "", "pcc_expiry": "", "avsec_date": "", "avsec_validity": "", "photo": None, "status": "Active", "last_day": "", "training_start": "", "training_end": "", "aep_issue": "", "aep_expiry": ""},
-    {"name": "SIVA", "emp_id": "", "designation": "Officer", "aep_no": "", "pcc_expiry": "", "avsec_date": "", "avsec_validity": "", "photo": None, "status": "Active", "last_day": "", "training_start": "", "training_end": "", "aep_issue": "", "aep_expiry": ""}
-]
-
+# ==============================================================================
+# DATA LOADERS & SAVERS
+# ==============================================================================
 def load_staff_registry():
-    if os.path.exists(STAFF_STORAGE_PATH):
+    if os.path.exists(STAFF_REGISTRY_PATH):
         try:
-            with open(STAFF_STORAGE_PATH, "r", encoding="utf-8") as f:
-                registry = json.load(f)
-                for staff in registry:
-                    if "aep_issue" not in staff: staff["aep_issue"] = ""
-                    if "aep_expiry" not in staff: staff["aep_expiry"] = ""
-                    if "emp_id" not in staff: staff["emp_id"] = ""
-                    if "designation" not in staff: staff["designation"] = "Officer"
-                    if "aep_no" not in staff: staff["aep_no"] = ""
-                    if "pcc_expiry" not in staff: staff["pcc_expiry"] = ""
-                    if "avsec_date" not in staff: staff["avsec_date"] = ""
-                    if "avsec_validity" not in staff: staff["avsec_validity"] = ""
-                return registry
-        except Exception:
-            return DEFAULT_STAFF
-    return DEFAULT_STAFF
+            with open(STAFF_REGISTRY_PATH, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except:
+            return []
+    return []
 
 def save_staff_registry(registry):
-    with open(STAFF_STORAGE_PATH, "w", encoding="utf-8") as f:
-        json.dump(registry, f, ensure_ascii=False, indent=4)
+    with open(STAFF_REGISTRY_PATH, "w", encoding="utf-8") as f:
+        json.dump(registry, f, indent=4)
 
 def load_swaps():
-    if os.path.exists(SWAP_STORAGE_PATH):
+    if os.path.exists(SWAPS_STORAGE_PATH):
         try:
-            with open(SWAP_STORAGE_PATH, "r", encoding="utf-8") as f:
+            with open(SWAPS_STORAGE_PATH, "r", encoding="utf-8") as f:
                 return json.load(f)
-        except Exception:
-            pass
+        except:
+            return {}
     return {}
 
-def save_swaps(data):
-    with open(SWAP_STORAGE_PATH, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
-
-def generate_infinite_rosters(staff_registry=None):
-    if staff_registry is None:
-        staff_registry = load_staff_registry()
-        
-    staff_list = [s["name"] for s in staff_registry if s["status"] == "Active"]
-    if not staff_list:
-        staff_list = ["MAHESH", "AJITH", "BALU", "SHINE", "NAVANEETH", "AMAL", "SHYAM", "SIVA"]
-        
-    shift_cycle = ['B', 'B', np.nan, 'A', 'A', 'G', np.nan, np.nan]
-    months_list = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
-    
-    def get_days_in_month(year, month_name):
-        month_map = {
-            "January": 31, "February": 29 if (year % 4 == 0 and year % 100 != 0) or (year % 400 == 0) else 28,
-            "March": 31, "April": 30, "May": 31, "June": 30, "July": 31, "August": 31,
-            "September": 30, "October": 31, "November": 30, "December": 31
-        }
-        return month_map.get(month_name, 30)
-
-    target_sequence = [(2025, "November"), (2025, "December")]
-    for y in range(2026, 2031):
-        for m in months_list:
-            target_sequence.append((y, m))
-            
-    all_rosters = {}
-    total_days_elapsed = 0
-    
-    month_to_num = {"January":1, "February":2, "March":3, "April":4, "May":5, "June":6, "July":7, "August":8, "September":9, "October":10, "November":11, "December":12}
-    
-    for year, m_name in target_sequence:
-        days_count = get_days_in_month(year, m_name)
-        dates = [str(d) for d in range(1, days_count + 1)]
-        m_num = month_to_num[m_name]
-        
-        month_roster = []
-        for emp_idx, emp in enumerate(staff_list):
-            emp_row = [emp]
-            base_offset = (7 - emp_idx) % 8
-            
-            designation = "Officer"
-            for s in staff_registry:
-                if s["name"] == emp and s["status"] == "Active":
-                    designation = s.get("designation", "Officer")
-                    break
-            
-            for day_idx in range(days_count):
-                day_num = day_idx + 1
-                curr_date = datetime(year, m_num, day_num)
-                weekday = curr_date.weekday()
-                
-                if designation == "Network Engineer":
-                    val = "G" if weekday < 5 else ""
-                else:
-                    absolute_day_index = total_days_elapsed + day_idx
-                    shift_idx = (absolute_day_index + base_offset) % len(shift_cycle)
-                    val = shift_cycle[shift_idx]
-                    val = val if pd.notna(val) else ""
-                    
-                emp_row.append(val)
-            month_roster.append(emp_row)
-            
-        m_df = pd.DataFrame(month_roster, columns=['Employee'] + dates)
-        all_rosters[f"{m_name} {year}"] = m_df
-        total_days_elapsed += days_count
-        
-    return all_rosters
+def save_swaps(swap_data):
+    with open(SWAPS_STORAGE_PATH, "w", encoding="utf-8") as f:
+        json.dump(swap_data, f, indent=4)
 
 def load_rosters():
     if os.path.exists(ROSTER_STORAGE_PATH):
         try:
-            return pd.read_pickle(ROSTER_STORAGE_PATH)
-        except Exception:
-            pass
-    return generate_infinite_rosters()
+            with open(ROSTER_STORAGE_PATH, "rb") as f:
+                return pickle.load(f)
+        except:
+            return {}
+    return {}
 
-def save_rosters(rosters_dict):
-    pd.to_pickle(rosters_dict, ROSTER_STORAGE_PATH)
+def save_rosters(sheets_dict):
+    with open(ROSTER_STORAGE_PATH, "wb") as f:
+        pickle.dump(sheets_dict, f)
+
+# ==============================================================================
+# CORE ROSTER GENERATOR (WITH AUTO-REPLACEMENT)
+# ==============================================================================
+def generate_infinite_rosters(staff_registry):
+    """
+    Generates roster dataframes for the current month +/- 6 months.
+    Automatically assigns new joinees to the slot of the resigned employee they are replacing.
+    """
+    sheets_dict = {}
+    
+    # 1. Group Staff into "Slots" to handle replacements seamlessly
+    # A Slot is a continuous row on the roster. If Shyam resigns on Oct 1, 
+    # and a new employee joins to replace him, they occupy the same Slot.
+    roster_slots = {}
+    
+    # Sort staff so active/older staff get slots first, newer replacements map to them
+    sorted_staff = sorted(staff_registry, key=lambda x: x.get('training_start', '2000-01-01'))
+    
+    slot_index = 0
+    for staff in sorted_staff:
+        designation = staff.get("designation", "Officer")
+        emp_name = staff["name"].strip().upper()
+        
+        # Check if there is a slot with a resigned employee of the SAME designation
+        assigned_to_existing_slot = False
+        for s_idx, slot_occupants in roster_slots.items():
+            last_occupant = slot_occupants[-1]
+            
+            # If the last occupant of this slot is resigning/resigned and designations match
+            if last_occupant.get("status") == "Resigned" or last_occupant.get("last_day"):
+                if last_occupant.get("designation", "Officer") == designation:
+                    roster_slots[s_idx].append(staff)
+                    assigned_to_existing_slot = True
+                    break
+        
+        # If no slot was available to take over, create a new row/slot
+        if not assigned_to_existing_slot:
+            roster_slots[slot_index] = [staff]
+            slot_index += 1
+
+    # 2. Build the Matrices for each month
+    today = datetime.now()
+    start_date = (today.replace(day=1) - timedelta(days=180)).replace(day=1) # 6 months back
+    
+    for month_offset in range(12): # 12 months total coverage
+        # Calculate month and year
+        m = (start_date.month + month_offset - 1) % 12 + 1
+        y = start_date.year + (start_date.month + month_offset - 1) // 12
+        
+        month_name = datetime(y, m, 1).strftime("%B %Y")
+        days_in_month = calendar.monthrange(y, m)[1]
+        
+        month_data = []
+        
+        # 3. Process Each Roster Slot (Row)
+        for s_idx, occupants in roster_slots.items():
+            # Figure out who occupies this slot on THIS specific month
+            # We iterate through the occupants of the slot and see who is active
+            
+            for staff in occupants:
+                emp_name = staff["name"].strip().upper()
+                designation = staff.get("designation", "Officer")
+                last_day_str = staff.get("last_day", "")
+                training_start_str = staff.get("training_start", "")
+                
+                # Check if they are active in this month at all
+                valid_for_month = True
+                month_start = datetime(y, m, 1).date()
+                month_end = datetime(y, m, days_in_month).date()
+                
+                if last_day_str:
+                    try:
+                        ld = datetime.strptime(last_day_str, "%Y-%m-%d").date()
+                        if ld < month_start:
+                            valid_for_month = False # They left before this month started
+                    except: pass
+                    
+                if training_start_str:
+                    try:
+                        ts = datetime.strptime(training_start_str, "%Y-%m-%d").date()
+                        if ts > month_end:
+                            valid_for_month = False # They join after this month ends
+                    except: pass
+
+                if not valid_for_month:
+                    continue # Skip to the next person sharing this slot
+
+                # Build the row for this person
+                row = {"Employee": emp_name}
+                
+                # DEFAULT SHIFT LOGIC (Replace this block with your custom math if needed)
+                for day in range(1, days_in_month + 1):
+                    current_date = datetime(y, m, day).date()
+                    
+                    # If date is past their last day, leave it blank (the replacement will fill the next row)
+                    if last_day_str:
+                        try:
+                            ld = datetime.strptime(last_day_str, "%Y-%m-%d").date()
+                            if current_date > ld:
+                                row[str(day)] = ""
+                                continue
+                        except: pass
+                    
+                    # Network Engineers get General Shift natively
+                    if designation == "Network Engineer":
+                        shift = "G" if current_date.weekday() < 5 else "OFF"
+                    else:
+                        # Standard A/B/OFF rotating logic based on slot index
+                        # 0,1 = A, 2,3 = B, 4,5 = OFF (Basic placeholder rotation)
+                        cycle = (current_date.toordinal() + s_idx * 2) % 6
+                        if cycle < 2: shift = "A"
+                        elif cycle < 4: shift = "B"
+                        else: shift = "OFF"
+                        
+                    row[str(day)] = shift
+                    
+                month_data.append(row)
+                
+        # Create Dataframe
+        if month_data:
+            df = pd.DataFrame(month_data)
+        else:
+            cols = ["Employee"] + [str(d) for d in range(1, days_in_month + 1)]
+            df = pd.DataFrame(columns=cols)
+            
+        sheets_dict[month_name] = df
+        
+    return sheets_dict
