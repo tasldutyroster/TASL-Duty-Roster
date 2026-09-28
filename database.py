@@ -12,7 +12,7 @@ STAFF_REGISTRY_PATH = "staff_registry_storage.json"
 ROSTER_STORAGE_PATH = "roster_storage_v2.pkl"
 SWAPS_STORAGE_PATH = "swap_tracking.json"
 BANNER_CACHE_PATH = "banner_cache.b64"
-SETTINGS_PASSWORD = "0477" # Adjust your admin PIN here
+SETTINGS_PASSWORD = "123" # <--- Change this to your preferred PIN
 
 # ==============================================================================
 # DATA LOADERS & SAVERS
@@ -57,41 +57,38 @@ def save_rosters(sheets_dict):
         pickle.dump(sheets_dict, f)
 
 # ==============================================================================
-# CORE ROSTER GENERATOR (WITH AUTO-REPLACEMENT)
+# CORE ROSTER GENERATOR (WITH AUTO-REPLACEMENT & DYNAMIC SLOT MAPPING)
 # ==============================================================================
 def generate_infinite_rosters(staff_registry):
     """
     Generates roster dataframes for the current month +/- 6 months.
-    Automatically assigns new joinees to the slot of the resigned employee they are replacing.
+    Automatically assigns explicit replacements to the slot of the resigned employee.
     """
     sheets_dict = {}
     
     # 1. Group Staff into "Slots" to handle replacements seamlessly
-    # A Slot is a continuous row on the roster. If Shyam resigns on Oct 1, 
-    # and a new employee joins to replace him, they occupy the same Slot.
     roster_slots = {}
     
-    # Sort staff so active/older staff get slots first, newer replacements map to them
+    # Sort staff so active/older staff get slots first, newer replacements map to them later
     sorted_staff = sorted(staff_registry, key=lambda x: x.get('training_start', '2000-01-01'))
     
     slot_index = 0
     for staff in sorted_staff:
-        designation = staff.get("designation", "Officer")
         emp_name = staff["name"].strip().upper()
+        replaced_emp = staff.get("replaced_emp", "").strip().upper()
         
-        # Check if there is a slot with a resigned employee of the SAME designation
         assigned_to_existing_slot = False
-        for s_idx, slot_occupants in roster_slots.items():
-            last_occupant = slot_occupants[-1]
-            
-            # If the last occupant of this slot is resigning/resigned and designations match
-            if last_occupant.get("status") == "Resigned" or last_occupant.get("last_day"):
-                if last_occupant.get("designation", "Officer") == designation:
+        
+        # If this employee explicitly replaces someone, find the target slot they belong to
+        if replaced_emp:
+            for s_idx, slot_occupants in roster_slots.items():
+                # Check if the replaced employee is currently inside this specific slot
+                if any(occ["name"].strip().upper() == replaced_emp for occ in slot_occupants):
                     roster_slots[s_idx].append(staff)
                     assigned_to_existing_slot = True
                     break
         
-        # If no slot was available to take over, create a new row/slot
+        # If it's a completely new addition, or the explicitly replaced person wasn't found, give them a new slot
         if not assigned_to_existing_slot:
             roster_slots[slot_index] = [staff]
             slot_index += 1
@@ -101,7 +98,6 @@ def generate_infinite_rosters(staff_registry):
     start_date = (today.replace(day=1) - timedelta(days=180)).replace(day=1) # 6 months back
     
     for month_offset in range(12): # 12 months total coverage
-        # Calculate month and year
         m = (start_date.month + month_offset - 1) % 12 + 1
         y = start_date.year + (start_date.month + month_offset - 1) // 12
         
@@ -112,16 +108,12 @@ def generate_infinite_rosters(staff_registry):
         
         # 3. Process Each Roster Slot (Row)
         for s_idx, occupants in roster_slots.items():
-            # Figure out who occupies this slot on THIS specific month
-            # We iterate through the occupants of the slot and see who is active
-            
             for staff in occupants:
                 emp_name = staff["name"].strip().upper()
                 designation = staff.get("designation", "Officer")
                 last_day_str = staff.get("last_day", "")
                 training_start_str = staff.get("training_start", "")
                 
-                # Check if they are active in this month at all
                 valid_for_month = True
                 month_start = datetime(y, m, 1).date()
                 month_end = datetime(y, m, days_in_month).date()
@@ -130,27 +122,26 @@ def generate_infinite_rosters(staff_registry):
                     try:
                         ld = datetime.strptime(last_day_str, "%Y-%m-%d").date()
                         if ld < month_start:
-                            valid_for_month = False # They left before this month started
+                            valid_for_month = False # Left before this month started
                     except: pass
                     
                 if training_start_str:
                     try:
                         ts = datetime.strptime(training_start_str, "%Y-%m-%d").date()
                         if ts > month_end:
-                            valid_for_month = False # They join after this month ends
+                            valid_for_month = False # Joining after this month ends
                     except: pass
 
                 if not valid_for_month:
-                    continue # Skip to the next person sharing this slot
+                    continue # Skip to the next person sharing this slot (the replacement)
 
                 # Build the row for this person
                 row = {"Employee": emp_name}
                 
-                # DEFAULT SHIFT LOGIC (Replace this block with your custom math if needed)
+                # --- YOUR SHIFT LOGIC LIVES HERE ---
                 for day in range(1, days_in_month + 1):
                     current_date = datetime(y, m, day).date()
                     
-                    # If date is past their last day, leave it blank (the replacement will fill the next row)
                     if last_day_str:
                         try:
                             ld = datetime.strptime(last_day_str, "%Y-%m-%d").date()
@@ -159,18 +150,17 @@ def generate_infinite_rosters(staff_registry):
                                 continue
                         except: pass
                     
-                    # Network Engineers get General Shift natively
                     if designation == "Network Engineer":
                         shift = "G" if current_date.weekday() < 5 else "OFF"
                     else:
-                        # Standard A/B/OFF rotating logic based on slot index
-                        # 0,1 = A, 2,3 = B, 4,5 = OFF (Basic placeholder rotation)
+                        # Placeholder rotating logic:
                         cycle = (current_date.toordinal() + s_idx * 2) % 6
                         if cycle < 2: shift = "A"
                         elif cycle < 4: shift = "B"
                         else: shift = "OFF"
                         
                     row[str(day)] = shift
+                # -----------------------------------
                     
                 month_data.append(row)
                 
