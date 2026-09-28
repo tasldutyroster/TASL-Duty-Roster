@@ -114,7 +114,7 @@ else:
 st.markdown(get_app_styles(cal_palette, font_size), unsafe_allow_html=True)
 
 def render_styled_html_table(df, month_name=None):
-    """Renders a gorgeous, professional HTML table and highlights strictly swapped shifts using swap_tracking.json"""
+    """Renders a gorgeous, professional HTML table and safely highlights swapped shifts"""
     swap_tracking = st.session_state.get("swap_data", {})
     month_swaps = swap_tracking.get(month_name, {}) if month_name else {}
 
@@ -155,6 +155,8 @@ def render_styled_html_table(df, month_name=None):
         
         emp_name = str(row[emp_col_name]).strip().upper()
         emp_swapped_dates = month_swaps.get(emp_name, [])
+        if not isinstance(emp_swapped_dates, list):
+            emp_swapped_dates = []
                 
         for col in df.columns:
             val = row[col] if pd.notna(row[col]) else ""
@@ -566,7 +568,6 @@ elif current_view == "Duty Roster":
                 cal_val2 = st.date_input("Date Person B works for Person A:", value=min_d, min_value=min_d, max_value=max_d, key="sw_d2_cal")
                 swap_date2 = str(cal_val2.day)
             
-            # Persistent swap tracking per person per month
             swap_tracking = st.session_state.get("swap_data", {})
             m_swaps = swap_tracking.setdefault(act_month, {})
             emp1_swaps_list = m_swaps.setdefault(str(swap_emp1).strip().upper(), [])
