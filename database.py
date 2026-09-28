@@ -13,7 +13,7 @@ STAFF_REGISTRY_PATH = "staff_registry_storage.json"
 ROSTER_STORAGE_PATH = "roster_storage_v2.pkl"
 SWAPS_STORAGE_PATH = "swap_tracking.json"
 BANNER_CACHE_PATH = "banner_cache.b64"
-SETTINGS_PASSWORD = "123" # Change back to your preferred PIN if needed
+SETTINGS_PASSWORD = "123" # Change to your preferred PIN
 
 # ==============================================================================
 # DATA LOADERS & SAVERS
@@ -61,18 +61,10 @@ def save_rosters(sheets_dict):
 # CORE ROSTER GENERATOR (EXACT SHIFT CYCLE & AUTO-REPLACEMENT)
 # ==============================================================================
 def generate_infinite_rosters(staff_registry):
-    """
-    Generates roster dataframes for the current month +/- 6 months using 
-    your exact 8-day shift cycle and slot inheritance for replacements.
-    """
     sheets_dict = {}
-    
-    # Exact shift cycle from your auto_generate_roster.py script:
-    # B = Night Shift, A = Day Shift, G = General Shift (Standby), "" = Off
     shift_cycle = ['B', 'B', '', 'A', 'A', 'G', '', '']
     ref_date = datetime(2025, 11, 1).date()
     
-    # 1. Group Staff into "Slots" to handle replacements seamlessly
     roster_slots = {}
     sorted_staff = sorted(staff_registry, key=lambda x: x.get('training_start', '2000-01-01'))
     
@@ -92,7 +84,6 @@ def generate_infinite_rosters(staff_registry):
             roster_slots[slot_index] = [staff]
             slot_index += 1
 
-    # 2. Build the Matrices for each month (+/- 6 months)
     today = datetime.now()
     start_date = (today.replace(day=1) - timedelta(days=180)).replace(day=1)
     
@@ -105,7 +96,6 @@ def generate_infinite_rosters(staff_registry):
         
         month_data = []
         
-        # 3. Process Each Roster Slot (Row)
         for s_idx, occupants in roster_slots.items():
             for staff in occupants:
                 emp_name = staff["name"].strip().upper()
