@@ -12,7 +12,7 @@ STAFF_REGISTRY_PATH = "staff_registry_storage.json"
 ROSTER_STORAGE_PATH = "roster_storage_v2.pkl"
 SWAPS_STORAGE_PATH = "swap_tracking.json"
 BANNER_CACHE_PATH = "banner_cache.b64"
-SETTINGS_PASSWORD = "123" # <--- Change this to your preferred PIN
+SETTINGS_PASSWORD = "0477" # <--- Change this to your preferred PIN
 
 # ==============================================================================
 # DATA LOADERS & SAVERS
