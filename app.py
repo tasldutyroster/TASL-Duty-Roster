@@ -336,7 +336,17 @@ if current_view == "Dashboard":
             compliance_alerts = []
             
             for staff in st.session_state["staff_registry"]:
-                if staff["status"] == "Active":
+                # Evaluate dynamic status
+                res_date_str = staff.get('last_day', '')
+                is_active = staff["status"] == "Active"
+                if res_date_str:
+                    try:
+                        res_d = datetime.strptime(res_date_str, "%Y-%m-%d").date()
+                        if today_real_date > res_d:
+                            is_active = False
+                    except: pass
+
+                if is_active:
                     name = staff["name"]
                     emp_id = staff.get("emp_id", "")
                     
@@ -656,8 +666,19 @@ elif current_view == "AEP Tracker":
     st.info("Update compliance dates for all personnel. Staff with AEP passes expiring within 45 days will be automatically flagged on the Dashboard.")
     
     comp_data = []
+    today_real_date = datetime.now().date()
     for s in st.session_state["staff_registry"]:
-        if s["status"] == "Active":
+        # Evaluate dynamic active status
+        res_date_str = s.get('last_day', '')
+        is_active = s["status"] == "Active"
+        if res_date_str:
+            try:
+                res_d = datetime.strptime(res_date_str, "%Y-%m-%d").date()
+                if today_real_date > res_d:
+                    is_active = False
+            except: pass
+
+        if is_active:
             comp_data.append({
                 "NAME": s["name"],
                 "DESIGNATION": s.get("designation", "Officer"),
@@ -673,7 +694,16 @@ elif current_view == "AEP Tracker":
     st.write("---")
     
     for idx, staff in enumerate(st.session_state["staff_registry"]):
-        if staff["status"] == "Active":
+        res_date_str = staff.get('last_day', '')
+        is_active = staff["status"] == "Active"
+        if res_date_str:
+            try:
+                res_d = datetime.strptime(res_date_str, "%Y-%m-%d").date()
+                if today_real_date > res_d:
+                    is_active = False
+            except: pass
+
+        if is_active:
             disp_id = f" ({staff.get('emp_id', '')})" if staff.get('emp_id') else ""
             with st.expander(f"🪪 {staff['name']}{disp_id} — Compliance Details Update"):
                 c1, c2, c3 = st.columns(3)
@@ -815,9 +845,21 @@ elif current_view == "Settings":
             st.markdown("#### Manage Current Staff (Photos, ID, Resignation)")
             
             for idx, staff in enumerate(st.session_state["staff_registry"]):
+                # Determine dynamic status based on last working day
+                today_real_date = datetime.now().date()
+                res_date_str = staff.get('last_day', '')
+                is_actually_resigned = False
+                if res_date_str:
+                    try:
+                        res_d = datetime.strptime(res_date_str, "%Y-%m-%d").date()
+                        if today_real_date > res_d:
+                            is_actually_resigned = True
+                    except: pass
+
+                display_status = "Resigned" if (staff['status'] == "Resigned" or is_actually_resigned) else "Active"
                 disp_id = f" ({staff.get('emp_id', '')})" if staff.get('emp_id') else ""
-                with st.expander(f"👤 {staff['name']}{disp_id} — Status: {staff['status']}"):
-                    
+                
+                with st.expander(f"👤 {staff['name']}{disp_id} — Status: {display_status}"):
                     col_n1, col_n2, col_n3 = st.columns([1.5, 1, 1.5])
                     with col_n1:
                         new_edit_name = st.text_input(f"Edit Name:", value=staff['name'], key=f"edit_name_{idx}")
@@ -887,12 +929,15 @@ elif current_view == "Settings":
                     with col_s2:
                         st.write("")
                         st.write("")
-                        if st.button("Mark Resigned", key=f"btn_res_{idx}", type="secondary"):
-                            st.session_state["staff_registry"][idx]["status"] = "Resigned"
+                        if st.button("Save Last Working Day", key=f"btn_res_{idx}", type="secondary"):
+                            future_date = res_date.date() if hasattr(res_date, 'date') else res_date
+                            current_status = "Resigned" if datetime.now().date() > future_date else "Active"
+                            
+                            st.session_state["staff_registry"][idx]["status"] = current_status
                             st.session_state["staff_registry"][idx]["last_day"] = res_date.strftime("%Y-%m-%d")
                             save_staff_registry(st.session_state["staff_registry"])
-                            st.toast("⚠️ Staff marked as resigned", icon="ℹ️")
-                            st.success(f"Marked {staff['name']} as Resigned.")
+                            st.toast("⚠️ Resignation schedule updated", icon="ℹ️")
+                            st.success(f"Last working day for {staff['name']} set to {res_date.strftime('%Y-%m-%d')}.")
                             st.rerun()
 
         elif curr_settings_sub == "ClearLeave":
