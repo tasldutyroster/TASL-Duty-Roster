@@ -548,7 +548,7 @@ elif current_view == "Duty Roster":
         
         else:
             st.markdown(f"##### Execute Inter-Staff Calendar Shift Swap (for **{act_month}**)")
-            st.info("ℹ️ **Rule:** A maximum of TWO swaps are permitted per employee per month. The shifts on the selected dates will be exchanged.")
+            st.info("ℹ️️ **Rule:** A maximum of TWO swaps are permitted per employee per month. The shifts on the selected dates will be exchanged.")
             
             c1, c2 = st.columns(2)
             with c1: 
@@ -563,7 +563,7 @@ elif current_view == "Duty Roster":
                 swap_date1 = str(cal_val1.day)
             with c2: 
                 emp2_options = [e for e in emp_list if e != swap_emp1]
-                swap_emp2 = custom_select("Employee 2 (Person B):", emp2_options, "sw_e2", icon="🧑‍💼")
+                swap_emp2 = custom_select("Employee 2 (Person B):", emp2_options, "sw_e2", icon="🧑‍‍💼")
                 
                 cal_val2 = st.date_input("Date Person B works for Person A:", value=min_d, min_value=min_d, max_value=max_d, key="sw_d2_cal")
                 swap_date2 = str(cal_val2.day)
@@ -642,7 +642,7 @@ elif current_view == "Duty Roster":
             
     elif curr_roster_sub == "Report":
         st.markdown("#### 🌴 Personnel Attendance Quota & Balance Report")
-        st.info("ℹ️ **Internal Team Purpose:** General Holidays (HOLIDAY) are officially credited as working days and do not reduce the employee's standard working quota. Maximum paid leave limit is 3 per month.")
+        st.info("ℹ️️ **Internal Team Purpose:** General Holidays (HOLIDAY) are officially credited as working days and do not reduce the employee's standard working quota. Maximum paid leave limit is 3 per month.")
         
         rep_c1, rep_c2 = st.columns(2)
         with rep_c1:
@@ -874,10 +874,13 @@ elif current_view == "Settings":
                         st.error("Please enter a valid staff name.")
 
             st.divider()
-            st.markdown("#### Manage Current Staff (Photos, ID, Resignation)")
+            
+            # Separate active staff from fully archived past employees
+            today_real_date = datetime.now().date()
+            active_staff_list = []
+            resigned_staff_list = []
             
             for idx, staff in enumerate(st.session_state["staff_registry"]):
-                today_real_date = datetime.now().date()
                 res_date_str = staff.get('last_day', '')
                 is_actually_resigned = False
                 if res_date_str:
@@ -887,10 +890,20 @@ elif current_view == "Settings":
                             is_actually_resigned = True
                     except: pass
 
-                display_status = "Resigned" if (staff['status'] == "Resigned" or is_actually_resigned) else "Active"
+                if staff['status'] == "Resigned" or is_actually_resigned:
+                    resigned_staff_list.append((idx, staff))
+                else:
+                    active_staff_list.append((idx, staff))
+
+            # --- SECTION 1: ACTIVE STAFF ---
+            st.markdown("#### 🟢 Active Staff Matrix")
+            if not active_staff_list:
+                st.info("No active staff currently registered.")
+            
+            for idx, staff in active_staff_list:
                 disp_id = f" ({staff.get('emp_id', '')})" if staff.get('emp_id') else ""
                 
-                with st.expander(f"👤 {staff['name']}{disp_id} — Status: {display_status}"):
+                with st.expander(f"👤 {staff['name']}{disp_id} — Status: Active"):
                     col_n1, col_n2, col_n3 = st.columns([1.5, 1, 1.5])
                     with col_n1:
                         new_edit_name = st.text_input(f"Edit Name:", value=staff['name'], key=f"edit_name_{idx}")
@@ -908,7 +921,6 @@ elif current_view == "Settings":
                         new_id_clean = new_edit_id.strip().upper()
                         
                         needs_save = False
-                        
                         if new_id_clean != staff.get('emp_id', ''):
                             st.session_state["staff_registry"][idx]["emp_id"] = new_id_clean
                             needs_save = True
@@ -961,18 +973,52 @@ elif current_view == "Settings":
                         st.write("")
                         st.write("")
                         if st.button("Save Last Working Day", key=f"btn_res_{idx}", type="secondary"):
-                            future_date = res_date.date() if hasattr(res_date, 'date') else res_date
-                            current_status = "Resigned" if datetime.now().date() > future_date else "Active"
+                            formatted_date_str = res_date.strftime("%Y-%m-%d")
+                            parsed_res_date = datetime.strptime(formatted_date_str, "%Y-%m-%d").date()
+                            
+                            is_past = datetime.now().date() > parsed_res_date
+                            current_status = "Resigned" if is_past else "Active"
                             
                             st.session_state["staff_registry"][idx]["status"] = current_status
-                            st.session_state["staff_registry"][idx]["last_day"] = res_date.strftime("%Y-%m-%d")
+                            st.session_state["staff_registry"][idx]["last_day"] = formatted_date_str
+                            
                             save_staff_registry(st.session_state["staff_registry"])
-                            st.toast("⚠️ Resignation schedule updated", icon="ℹ️")
-                            st.success(f"Last working day for {staff['name']} set to {res_date.strftime('%Y-%m-%d')}.")
+                            st.toast("⚠️ Resignation schedule updated successfully!", icon="ℹ️")
+                            st.success(f"Last working day for {staff['name']} set to {formatted_date_str}.")
                             st.rerun()
 
+            # --- SECTION 2: PREVIOUS / RESIGNED EMPLOYEES ---
+            st.write("---")
+            st.markdown("#### 📁 Previous / Resigned Employees Archive")
+            if not resigned_staff_list:
+                st.caption("No past or archived employees found.")
+            else:
+                for idx, staff in resigned_staff_list:
+                    disp_id = f" ({staff.get('emp_id', '')})" if staff.get('emp_id') else ""
+                    last_d_display = staff.get('last_day', 'N/A')
+                    
+                    with st.expander(f"👤 {staff['name']}{disp_id} — Resigned (Last Working Day: {last_d_display})"):
+                        col_a, col_b = st.columns([1, 4])
+                        with col_a:
+                            if staff.get("photo"):
+                                st.markdown(f'<img src="{staff["photo"]}" class="avatar-img" style="width:60px; height:60px;" />', unsafe_allow_html=True)
+                            else:
+                                st.markdown(f'<div style="width:60px; height:60px; border-radius:50%; background:#64748B; color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:16px;">{staff["name"][:2]}</div>', unsafe_allow_html=True)
+                        with col_b:
+                            st.markdown(f"**Designation:** {staff.get('designation', 'Officer')}")
+                            st.markdown(f"**Employee ID:** {staff.get('emp_id', 'N/A')}")
+                            st.markdown(f"**Last Working Day:** {last_d_display}")
+                            
+                            # Option to reactivate if needed
+                            if st.button(f"🔄 Reactivate Staff ({staff['name']})", key=f"reactivate_{idx}"):
+                                st.session_state["staff_registry"][idx]["status"] = "Active"
+                                st.session_state["staff_registry"][idx]["last_day"] = ""
+                                save_staff_registry(st.session_state["staff_registry"])
+                                st.success(f"Successfully restored {staff['name']} to active staff!")
+                                st.rerun()
+
         elif curr_settings_sub == "ClearLeave":
-            st.markdown("#### 🗑️ Master Revert & Clear Center (All Employees)")
+            st.markdown("#### 🗑️️ Master Revert & Clear Center (All Employees)")
             st.info("Below is the complete list of all modified shifts (Leaves, Sick days, Holidays, and Swaps) across all employees for the selected month. Click 'Revert' on any item to restore it instantly.")
             
             existing_sheets_set = list(sheets_dict.keys())
