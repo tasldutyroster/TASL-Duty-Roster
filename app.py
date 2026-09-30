@@ -443,7 +443,7 @@ if current_view == "Dashboard":
 # VIEW 2: DUTY ROSTER & SHIFT CALENDAR
 # ==============================================================================
 elif current_view == "Duty Roster":
-    st.subheader("🗓️ Interactive Shift & Attendance Calendar Matrix")
+    st.subheader("🗓️️ Interactive Shift & Attendance Calendar Matrix")
     
     existing_sheets = list(sheets_dict.keys())
     default_month_str = datetime.now().strftime("%B %Y")
@@ -505,7 +505,7 @@ elif current_view == "Duty Roster":
             st.markdown(f"##### Assign Leave or Holiday to Employee (for **{act_month}**)")
             c1, c2, c3 = st.columns(3)
             with c1: 
-                sel_emp = custom_select("Select Employee:", emp_list, "assign_emp", icon="🧑‍💼")
+                sel_emp = custom_select("Select Employee:", emp_list, "assign_emp", icon="🧑‍‍💼")
             with c2: 
                 month_obj = datetime.strptime(act_month, "%B %Y")
                 last_day = calendar.monthrange(month_obj.year, month_obj.month)[1]
@@ -548,7 +548,7 @@ elif current_view == "Duty Roster":
         
         else:
             st.markdown(f"##### Execute Inter-Staff Calendar Shift Swap (for **{act_month}**)")
-            st.info("ℹ️️ **Rule:** A maximum of TWO swaps are permitted per employee per month. The shifts on the selected dates will be exchanged.")
+            st.info("ℹ️ **Rule:** A maximum of TWO swaps are permitted per employee per month. The shifts on the selected dates will be exchanged.")
             
             c1, c2 = st.columns(2)
             with c1: 
@@ -563,7 +563,7 @@ elif current_view == "Duty Roster":
                 swap_date1 = str(cal_val1.day)
             with c2: 
                 emp2_options = [e for e in emp_list if e != swap_emp1]
-                swap_emp2 = custom_select("Employee 2 (Person B):", emp2_options, "sw_e2", icon="🧑‍‍💼")
+                swap_emp2 = custom_select("Employee 2 (Person B):", emp2_options, "sw_e2", icon="🧑‍💼")
                 
                 cal_val2 = st.date_input("Date Person B works for Person A:", value=min_d, min_value=min_d, max_value=max_d, key="sw_d2_cal")
                 swap_date2 = str(cal_val2.day)
@@ -642,7 +642,7 @@ elif current_view == "Duty Roster":
             
     elif curr_roster_sub == "Report":
         st.markdown("#### 🌴 Personnel Attendance Quota & Balance Report")
-        st.info("ℹ️️ **Internal Team Purpose:** General Holidays (HOLIDAY) are officially credited as working days and do not reduce the employee's standard working quota. Maximum paid leave limit is 3 per month.")
+        st.info("ℹ️ **Internal Team Purpose:** General Holidays (HOLIDAY) are officially credited as working days and do not reduce the employee's standard working quota. Maximum paid leave limit is 3 per month.")
         
         rep_c1, rep_c2 = st.columns(2)
         with rep_c1:
@@ -1009,7 +1009,6 @@ elif current_view == "Settings":
                             st.markdown(f"**Employee ID:** {staff.get('emp_id', 'N/A')}")
                             st.markdown(f"**Last Working Day:** {last_d_display}")
                             
-                            # Option to reactivate if needed
                             if st.button(f"🔄 Reactivate Staff ({staff['name']})", key=f"reactivate_{idx}"):
                                 st.session_state["staff_registry"][idx]["status"] = "Active"
                                 st.session_state["staff_registry"][idx]["last_day"] = ""
@@ -1018,7 +1017,7 @@ elif current_view == "Settings":
                                 st.rerun()
 
         elif curr_settings_sub == "ClearLeave":
-            st.markdown("#### 🗑️️ Master Revert & Clear Center (All Employees)")
+            st.markdown("#### 🗑️ Master Revert & Clear Center (All Employees)")
             st.info("Below is the complete list of all modified shifts (Leaves, Sick days, Holidays, and Swaps) across all employees for the selected month. Click 'Revert' on any item to restore it instantly.")
             
             existing_sheets_set = list(sheets_dict.keys())
