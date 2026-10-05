@@ -13,7 +13,7 @@ STAFF_REGISTRY_PATH = "staff_registry_storage.json"
 ROSTER_STORAGE_PATH = "roster_storage_v2.pkl"
 SWAPS_STORAGE_PATH = "swap_tracking.json"
 BANNER_CACHE_PATH = "banner_cache.b64"
-SETTINGS_PASSWORD = "123" # <--- Change to your preferred PIN if needed
+SETTINGS_PASSWORD = "123"
 
 BACKUP_DIR = "backups"
 
@@ -49,7 +49,7 @@ def create_backup(file_path):
         print(f"Backup failed for {file_path}: {e}")
 
 # ==============================================================================
-# DATA LOADERS & SAVERS (WITH PERMANENT STATUS LOCK & AUTO-BACKUP)
+# DATA LOADERS & SAVERS
 # ==============================================================================
 def load_staff_registry():
     registry = []
@@ -60,7 +60,6 @@ def load_staff_registry():
         except:
             registry = []
             
-    # Permanently enforce 'Resigned' status if last_day has passed
     today_date = datetime.now().date()
     updated = False
     for staff in registry:
@@ -112,13 +111,14 @@ def save_rosters(sheets_dict):
         pickle.dump(sheets_dict, f)
 
 # ==============================================================================
-# CORE ROSTER GENERATOR (EXACT SHIFT CYCLE & AUTO-REPLACEMENT SLOT MAPPING)
+# CORE ROSTER GENERATOR (SEAMLESS SLOT INHERITANCE FOR REPLACEMENTS)
 # ==============================================================================
 def generate_infinite_rosters(staff_registry):
     sheets_dict = {}
     shift_cycle = ['B', 'B', '', 'A', 'A', 'G', '', '']
     ref_date = datetime(2025, 11, 1).date()
     
+    # Group staff into persistent slot rows based on explicit replacement mapping
     roster_slots = {}
     sorted_staff = sorted(staff_registry, key=lambda x: x.get('training_start', '2000-01-01'))
     
@@ -150,58 +150,67 @@ def generate_infinite_rosters(staff_registry):
         
         month_data = []
         
+        # Process each structural roster slot row
         for s_idx, occupants in roster_slots.items():
-            for staff in occupants:
-                emp_name = staff["name"].strip().upper()
-                designation = staff.get("designation", "Officer")
-                last_day_str = staff.get("last_day", "")
-                training_start_str = staff.get("training_start", "")
+            month_start = datetime(y, m, 1).date()
+            month_end = datetime(y, m, days_in_month).date()
+            
+            # Build a combined row map for this slot across the month
+            slot_row = {"Employee": ""}
+            for day in range(1, days_in_month + 1):
+                slot_row[str(day)] = ""
                 
-                valid_for_month = True
-                month_start = datetime(y, m, 1).date()
-                month_end = datetime(y, m, days_in_month).date()
+            active_occupant_found = False
+            
+            for day in range(1, days_in_month + 1):
+                current_date = datetime(y, m, day).date()
                 
-                if last_day_str:
-                    try:
-                        ld = datetime.strptime(last_day_str, "%Y-%m-%d").date()
-                        if ld < month_start:
-                            valid_for_month = False
-                    except: pass
+                # Determine who is active in this specific slot on this specific day
+                active_staff_on_day = None
+                for staff in occupants:
+                    name = staff["name"].strip().upper()
+                    last_day_str = staff.get("last_day", "")
+                    training_start_str = staff.get("training_start", "")
                     
-                if training_start_str:
-                    try:
-                        ts = datetime.strptime(training_start_str, "%Y-%m-%d").date()
-                        if ts > month_end:
-                            valid_for_month = False
-                    except: pass
-
-                if not valid_for_month:
-                    continue
-
-                row = {"Employee": emp_name}
-                base_offset = s_idx * 3
-                
-                for day in range(1, days_in_month + 1):
-                    current_date = datetime(y, m, day).date()
-                    
+                    # Check validity for this specific calendar day
+                    is_valid = True
+                    if training_start_str:
+                        try:
+                            ts = datetime.strptime(training_start_str, "%Y-%m-%d").date()
+                            if current_date < ts:
+                                is_valid = False
+                        except: pass
+                        
                     if last_day_str:
                         try:
                             ld = datetime.strptime(last_day_str, "%Y-%m-%d").date()
                             if current_date > ld:
-                                row[str(day)] = ""
-                                continue
+                                is_valid = False
                         except: pass
+                        
+                    if is_valid:
+                        active_staff_on_day = staff
+                        break
+                
+                if active_staff_on_day:
+                    active_occupant_found = True
+                    slot_row["Employee"] = active_staff_on_day["name"].strip().upper()
                     
+                    designation = active_staff_on_day.get("designation", "Officer")
                     if designation == "Network Engineer":
                         shift = "G" if current_date.weekday() < 5 else ""
                     else:
                         absolute_day_index = (current_date - ref_date).days
-                        shift_idx = (absolute_day_index + base_offset) % len(shift_cycle)
+                        shift_idx = (absolute_day_index + (s_idx * 3)) % len(shift_cycle)
                         shift = shift_cycle[shift_idx]
                         
-                    row[str(day)] = shift if shift is not None else ""
-                    
-                month_data.append(row)
+                    slot_row[str(day)] = shift if shift is not None else ""
+                else:
+                    slot_row[str(day)] = ""
+            
+            # If someone occupied this slot during this month, add the row
+            if active_occupant_found and slot_row["Employee"]:
+                month_data.append(slot_row)
                 
         if month_data:
             df = pd.DataFrame(month_data)
