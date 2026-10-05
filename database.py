@@ -110,14 +110,14 @@ def save_rosters(sheets_dict):
         pickle.dump(sheets_dict, f)
 
 # ==============================================================================
-# CORE ROSTER GENERATOR (SEAMLESS REPLACEMENT SLOT MAPPING)
+# CORE ROSTER GENERATOR (DYNAMIC ROW-LABEL & SHIFT INHERITANCE)
 # ==============================================================================
 def generate_infinite_rosters(staff_registry):
     sheets_dict = {}
     shift_cycle = ['B', 'B', '', 'A', 'A', 'G', '', '']
     ref_date = datetime(2025, 11, 1).date()
     
-    # Establish permanent slot rows so shift math never shifts when staff change
+    # Establish permanent slot rows so ongoing shift math never changes
     roster_slots = {}
     base_staff = [s for s in staff_registry if not s.get("replaced_emp")]
     replacement_staff = [s for s in staff_registry if s.get("replaced_emp")]
@@ -151,29 +151,23 @@ def generate_infinite_rosters(staff_registry):
         
         month_data = []
         
-        # Process each structural roster slot row
         for s_idx, occupants in roster_slots.items():
             month_start = datetime(y, m, 1).date()
             month_end = datetime(y, m, days_in_month).date()
             
-            # Check if any occupant is valid for this month
-            month_has_occupant = False
+            # Find who is active by the end of the month or currently active to serve as the row label
+            active_row_name = occupants[-1]["name"].strip().upper()
             for staff in occupants:
-                ts_str = staff.get("training_start", "")
                 ld_str = staff.get("last_day", "")
-                
-                s_date = datetime.strptime(ts_str, "%Y-%m-%d").date() if ts_str else month_start
-                l_date = datetime.strptime(ld_str, "%Y-%m-%d").date() if ld_str else month_end
-                
-                if s_date <= month_end and l_date >= month_start:
-                    month_has_occupant = True
-                    break
-                    
-            if not month_has_occupant:
-                continue
+                if ld_str:
+                    try:
+                        ld = datetime.strptime(ld_str, "%Y-%m-%d").date()
+                        if ld >= month_start:
+                            active_row_name = staff["name"].strip().upper()
+                            break
+                    except: pass
 
-            primary_name = occupants[-1]["name"].strip().upper()
-            slot_row = {"Employee": primary_name}
+            slot_row = {"Employee": active_row_name}
             for day in range(1, days_in_month + 1):
                 slot_row[str(day)] = ""
                 
@@ -208,7 +202,6 @@ def generate_infinite_rosters(staff_registry):
                 
                 if active_staff_on_day:
                     active_occupant_found = True
-                    slot_row["Employee"] = active_staff_on_day["name"].strip().upper()
                     
                     designation = active_staff_on_day.get("designation", "Officer")
                     if designation == "Network Engineer":
@@ -222,7 +215,7 @@ def generate_infinite_rosters(staff_registry):
                 else:
                     slot_row[str(day)] = ""
             
-            if active_occupant_found and slot_row["Employee"]:
+            if active_occupant_found:
                 month_data.append(slot_row)
                 
         if month_data:
