@@ -4,7 +4,7 @@ import pickle
 import os
 from datetime import datetime, timedelta
 import calendar
-import numpy as np
+import shutil
 
 # ==============================================================================
 # CONSTANTS & FILE PATHS
@@ -13,21 +13,73 @@ STAFF_REGISTRY_PATH = "staff_registry_storage.json"
 ROSTER_STORAGE_PATH = "roster_storage_v2.pkl"
 SWAPS_STORAGE_PATH = "swap_tracking.json"
 BANNER_CACHE_PATH = "banner_cache.b64"
-SETTINGS_PASSWORD = "0477" # Change to your preferred PIN
+SETTINGS_PASSWORD = "123" # <--- Change to your preferred PIN if needed
+
+BACKUP_DIR = "backups"
 
 # ==============================================================================
-# DATA LOADERS & SAVERS
+# AUTO-BACKUP HELPER
+# ==============================================================================
+def create_backup(file_path):
+    """Creates a secure backup of the specified file inside the backups directory."""
+    if not os.path.exists(file_path):
+        return
+    try:
+        if not os.path.exists(BACKUP_DIR):
+            os.makedirs(BACKUP_DIR)
+        
+        file_name = os.path.basename(file_path)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        name_part, ext_part = os.path.splitext(file_name)
+        
+        backup_filename = f"{name_part}_backup_{timestamp}{ext_part}"
+        backup_path = os.path.join(BACKUP_DIR, backup_filename)
+        
+        shutil.copy2(file_path, backup_path)
+        
+        existing_backups = sorted([
+            os.path.join(BACKUP_DIR, f) for f in os.listdir(BACKUP_DIR) 
+            if f.startswith(name_part) and f.endswith(ext_part)
+        ])
+        if len(existing_backups) > 10:
+            for old_file in existing_backups[:-10]:
+                os.remove(old_file)
+                
+    except Exception as e:
+        print(f"Backup failed for {file_path}: {e}")
+
+# ==============================================================================
+# DATA LOADERS & SAVERS (WITH PERMANENT STATUS LOCK & AUTO-BACKUP)
 # ==============================================================================
 def load_staff_registry():
+    registry = []
     if os.path.exists(STAFF_REGISTRY_PATH):
         try:
             with open(STAFF_REGISTRY_PATH, "r", encoding="utf-8") as f:
-                return json.load(f)
+                registry = json.load(f)
         except:
-            return []
-    return []
+            registry = []
+            
+    # Permanently enforce 'Resigned' status if last_day has passed
+    today_date = datetime.now().date()
+    updated = False
+    for staff in registry:
+        last_day_str = staff.get("last_day", "").strip()
+        if last_day_str:
+            try:
+                ld = datetime.strptime(last_day_str, "%Y-%m-%d").date()
+                if today_date > ld and staff.get("status") != "Resigned":
+                    staff["status"] = "Resigned"
+                    updated = True
+            except: pass
+            
+    if updated:
+        save_staff_registry(registry)
+        
+    return registry
 
 def save_staff_registry(registry):
+    create_backup(STAFF_REGISTRY_PATH)
     with open(STAFF_REGISTRY_PATH, "w", encoding="utf-8") as f:
         json.dump(registry, f, indent=4)
 
@@ -41,6 +93,7 @@ def load_swaps():
     return {}
 
 def save_swaps(swap_data):
+    create_backup(SWAPS_STORAGE_PATH)
     with open(SWAPS_STORAGE_PATH, "w", encoding="utf-8") as f:
         json.dump(swap_data, f, indent=4)
 
@@ -54,11 +107,12 @@ def load_rosters():
     return {}
 
 def save_rosters(sheets_dict):
+    create_backup(ROSTER_STORAGE_PATH)
     with open(ROSTER_STORAGE_PATH, "wb") as f:
         pickle.dump(sheets_dict, f)
 
 # ==============================================================================
-# CORE ROSTER GENERATOR (EXACT SHIFT CYCLE & AUTO-REPLACEMENT)
+# CORE ROSTER GENERATOR (EXACT SHIFT CYCLE & AUTO-REPLACEMENT SLOT MAPPING)
 # ==============================================================================
 def generate_infinite_rosters(staff_registry):
     sheets_dict = {}
