@@ -45,7 +45,7 @@ def create_backup(file_path):
                 os.remove(old_file)
                 
     except Exception as e:
-        print(f"Backup failed for {file_path}: {e}")
+        pass
 
 # ==============================================================================
 # DATA LOADERS & SAVERS (WITH PERMANENT STATUS LOCK)
@@ -110,49 +110,69 @@ def save_rosters(sheets_dict):
         pickle.dump(sheets_dict, f)
 
 # ==============================================================================
-# CORE ROSTER GENERATOR (FLATTENED ROWS + INHERITED MATH)
+# CORE ROSTER GENERATOR (BULLETPROOF SHIFT ANCHORS)
 # ==============================================================================
 def generate_infinite_rosters(staff_registry):
     sheets_dict = {}
     shift_cycle = ['B', 'B', '', 'A', 'A', 'G', '', '']
     ref_date = datetime(2025, 11, 1).date()
     
-    # 1. Map every employee to a permanent shift math slot
-    emp_to_slot = {}
-    slot_index_counter = 0
+    # --- 1. BULLETPROOF SHIFT ANCHORS ---
+    # This guarantees Mahesh is ALWAYS slot 0, Ajith is ALWAYS slot 1, etc.
+    # No matter how the JSON file gets sorted or modified, their math never breaks.
+    anchor_map = {
+        "MAHESH": 0, "AJITH": 1, "BALU": 2, "SHINE": 3,
+        "NAVANEETH": 4, "AMAL": 5, "SHYAM": 6, "SIVA": 7
+    }
     
-    # Base staff get original slots
+    emp_to_slot = {}
+    slot_index_counter = 8
+    
+    # Assign permanent base slots
     for staff in staff_registry:
         if not staff.get("replaced_emp"):
             emp_name = staff["name"].strip().upper()
-            emp_to_slot[emp_name] = slot_index_counter
-            slot_index_counter += 1
             
-    # Replacements inherit the slot of the person they replaced
-    unmapped = [s for s in staff_registry if s.get("replaced_emp")]
-    max_iters = 10
-    while unmapped and max_iters > 0:
-        still_unmapped = []
-        for staff in unmapped:
-            emp_name = staff["name"].strip().upper()
-            replaced_name = staff.get("replaced_emp", "").strip().upper()
-            if replaced_name in emp_to_slot:
-                emp_to_slot[emp_name] = emp_to_slot[replaced_name]
+            assigned_slot = None
+            for anchor_key, anchor_val in anchor_map.items():
+                if anchor_key in emp_name:
+                    assigned_slot = anchor_val
+                    break
+                    
+            if assigned_slot is not None:
+                emp_to_slot[emp_name] = assigned_slot
             else:
-                still_unmapped.append(staff)
-        unmapped = still_unmapped
-        max_iters -= 1
+                emp_to_slot[emp_name] = slot_index_counter
+                slot_index_counter += 1
 
-    # Any remaining unmapped (due to typos in replaced_emp) get a new slot
+    # Assign replacements to inherit exact slots
+    unmapped = [s for s in staff_registry if s.get("replaced_emp")]
     for staff in unmapped:
         emp_name = staff["name"].strip().upper()
-        emp_to_slot[emp_name] = slot_index_counter
-        slot_index_counter += 1
+        replaced_name = staff.get("replaced_emp", "").strip().upper()
+        
+        assigned_slot = None
+        for existing_emp, s_idx in emp_to_slot.items():
+            if replaced_name in existing_emp or existing_emp in replaced_name:
+                assigned_slot = s_idx
+                break
+                
+        if assigned_slot is None:
+            for anchor_key, anchor_val in anchor_map.items():
+                if anchor_key in replaced_name:
+                    assigned_slot = anchor_val
+                    break
+
+        if assigned_slot is not None:
+            emp_to_slot[emp_name] = assigned_slot
+        else:
+            emp_to_slot[emp_name] = slot_index_counter
+            slot_index_counter += 1
 
     today = datetime.now()
     start_date = (today.replace(day=1) - timedelta(days=180)).replace(day=1)
     
-    # 2. Build Matrices Month by Month
+    # --- 2. BUILD MATRICES ---
     for month_offset in range(12):
         m = (start_date.month + month_offset - 1) % 12 + 1
         y = start_date.year + (start_date.month + month_offset - 1) // 12
@@ -172,7 +192,7 @@ def generate_infinite_rosters(staff_registry):
             ts_str = staff.get("training_start", "")
             ld_str = staff.get("last_day", "")
             
-            # Remove entirely if they left BEFORE this month started
+            # Completely exclude if left before month
             if ld_str:
                 try:
                     ld = datetime.strptime(ld_str, "%Y-%m-%d").date()
@@ -180,7 +200,7 @@ def generate_infinite_rosters(staff_registry):
                         continue 
                 except: pass
                 
-            # Remove entirely if they join AFTER this month ends
+            # Completely exclude if joining after month
             if ts_str:
                 try:
                     ts = datetime.strptime(ts_str, "%Y-%m-%d").date()
@@ -195,7 +215,6 @@ def generate_infinite_rosters(staff_registry):
                 current_date = datetime(y, m, day).date()
                 is_active_today = True
                 
-                # Check if joined yet
                 if ts_str:
                     try:
                         ts = datetime.strptime(ts_str, "%Y-%m-%d").date()
@@ -203,7 +222,6 @@ def generate_infinite_rosters(staff_registry):
                             is_active_today = False
                     except: pass
                     
-                # Check if already left
                 if ld_str:
                     try:
                         ld = datetime.strptime(ld_str, "%Y-%m-%d").date()
@@ -221,7 +239,7 @@ def generate_infinite_rosters(staff_registry):
                         shift = shift_cycle[shift_idx]
                     row[str(day)] = shift if shift is not None else ""
                 else:
-                    row[str(day)] = "" # Empty for inactive days
+                    row[str(day)] = ""
             
             if has_active_days or (not ld_str and not ts_str):
                 month_data.append(row)
