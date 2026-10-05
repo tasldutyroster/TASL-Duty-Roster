@@ -443,7 +443,7 @@ if current_view == "Dashboard":
 # VIEW 2: DUTY ROSTER & SHIFT CALENDAR
 # ==============================================================================
 elif current_view == "Duty Roster":
-    st.subheader("🗓️️ Interactive Shift & Attendance Calendar Matrix")
+    st.subheader("🗓️ Interactive Shift & Attendance Calendar Matrix")
     
     existing_sheets = list(sheets_dict.keys())
     default_month_str = datetime.now().strftime("%B %Y")
@@ -505,7 +505,7 @@ elif current_view == "Duty Roster":
             st.markdown(f"##### Assign Leave or Holiday to Employee (for **{act_month}**)")
             c1, c2, c3 = st.columns(3)
             with c1: 
-                sel_emp = custom_select("Select Employee:", emp_list, "assign_emp", icon="🧑‍‍💼")
+                sel_emp = custom_select("Select Employee:", emp_list, "assign_emp", icon="🧑‍💼")
             with c2: 
                 month_obj = datetime.strptime(act_month, "%B %Y")
                 last_day = calendar.monthrange(month_obj.year, month_obj.month)[1]
@@ -1112,16 +1112,12 @@ elif current_view == "Settings":
             st.write("---")
             
             st.markdown("##### ⚠️ Rebuild Calendar Data Matrix")
-            st.error("Clicking this button will completely regenerate the Shift Calendar applying all new Staff Rules. Previous manual shift swaps and leaves marked may be lost.")
+            st.info("Clicking this button will regenerate the base Shift Calendar. Your manual swaps will be safely preserved.")
             if st.button("🔄 Force Rebuild Roster Data"):
                 if os.path.exists(ROSTER_STORAGE_PATH):
                     os.remove(ROSTER_STORAGE_PATH)
-                if os.path.exists(SWAPS_STORAGE_PATH):
-                    os.remove(SWAPS_STORAGE_PATH)
                 st.session_state["sheets_dict"] = generate_infinite_rosters(st.session_state["staff_registry"])
-                st.session_state["swap_data"] = {}
                 save_rosters(st.session_state["sheets_dict"])
-                save_swaps({})
                 st.toast("🔄 Rosters completely rebuilt!", icon="⚙️")
-                st.success("Rosters completely rebuilt and reset successfully!")
+                st.success("Rosters safely rebuilt without losing swaps!")
                 st.rerun()
