@@ -110,113 +110,121 @@ def save_rosters(sheets_dict):
         pickle.dump(sheets_dict, f)
 
 # ==============================================================================
-# CORE ROSTER GENERATOR (DYNAMIC ROW-LABEL & SHIFT INHERITANCE)
+# CORE ROSTER GENERATOR (FLATTENED ROWS + INHERITED MATH)
 # ==============================================================================
 def generate_infinite_rosters(staff_registry):
     sheets_dict = {}
     shift_cycle = ['B', 'B', '', 'A', 'A', 'G', '', '']
     ref_date = datetime(2025, 11, 1).date()
     
-    # Establish permanent slot rows so ongoing shift math never changes
-    roster_slots = {}
-    base_staff = [s for s in staff_registry if not s.get("replaced_emp")]
-    replacement_staff = [s for s in staff_registry if s.get("replaced_emp")]
+    # 1. Map every employee to a permanent shift math slot
+    emp_to_slot = {}
+    slot_index_counter = 0
     
-    slot_index = 0
-    for staff in base_staff:
-        roster_slots[slot_index] = [staff]
-        slot_index += 1
-        
-    for staff in replacement_staff:
-        replaced_emp = staff.get("replaced_emp", "").strip().upper()
-        assigned = False
-        for s_idx, occupants in roster_slots.items():
-            if any(occ["name"].strip().upper() == replaced_emp for occ in occupants):
-                roster_slots[s_idx].append(staff)
-                assigned = True
-                break
-        if not assigned:
-            roster_slots[slot_index] = [staff]
-            slot_index += 1
+    # Base staff get original slots
+    for staff in staff_registry:
+        if not staff.get("replaced_emp"):
+            emp_name = staff["name"].strip().upper()
+            emp_to_slot[emp_name] = slot_index_counter
+            slot_index_counter += 1
+            
+    # Replacements inherit the slot of the person they replaced
+    unmapped = [s for s in staff_registry if s.get("replaced_emp")]
+    max_iters = 10
+    while unmapped and max_iters > 0:
+        still_unmapped = []
+        for staff in unmapped:
+            emp_name = staff["name"].strip().upper()
+            replaced_name = staff.get("replaced_emp", "").strip().upper()
+            if replaced_name in emp_to_slot:
+                emp_to_slot[emp_name] = emp_to_slot[replaced_name]
+            else:
+                still_unmapped.append(staff)
+        unmapped = still_unmapped
+        max_iters -= 1
+
+    # Any remaining unmapped (due to typos in replaced_emp) get a new slot
+    for staff in unmapped:
+        emp_name = staff["name"].strip().upper()
+        emp_to_slot[emp_name] = slot_index_counter
+        slot_index_counter += 1
 
     today = datetime.now()
     start_date = (today.replace(day=1) - timedelta(days=180)).replace(day=1)
     
+    # 2. Build Matrices Month by Month
     for month_offset in range(12):
         m = (start_date.month + month_offset - 1) % 12 + 1
         y = start_date.year + (start_date.month + month_offset - 1) // 12
         
         month_name = datetime(y, m, 1).strftime("%B %Y")
         days_in_month = calendar.monthrange(y, m)[1]
+        month_start = datetime(y, m, 1).date()
+        month_end = datetime(y, m, days_in_month).date()
         
         month_data = []
         
-        for s_idx, occupants in roster_slots.items():
-            month_start = datetime(y, m, 1).date()
-            month_end = datetime(y, m, days_in_month).date()
+        for staff in staff_registry:
+            emp_name = staff["name"].strip().upper()
+            s_idx = emp_to_slot.get(emp_name, 0)
+            designation = staff.get("designation", "Officer")
             
-            # Find who is active by the end of the month or currently active to serve as the row label
-            active_row_name = occupants[-1]["name"].strip().upper()
-            for staff in occupants:
-                ld_str = staff.get("last_day", "")
-                if ld_str:
-                    try:
-                        ld = datetime.strptime(ld_str, "%Y-%m-%d").date()
-                        if ld >= month_start:
-                            active_row_name = staff["name"].strip().upper()
-                            break
-                    except: pass
-
-            slot_row = {"Employee": active_row_name}
-            for day in range(1, days_in_month + 1):
-                slot_row[str(day)] = ""
+            ts_str = staff.get("training_start", "")
+            ld_str = staff.get("last_day", "")
+            
+            # Remove entirely if they left BEFORE this month started
+            if ld_str:
+                try:
+                    ld = datetime.strptime(ld_str, "%Y-%m-%d").date()
+                    if ld < month_start:
+                        continue 
+                except: pass
                 
-            active_occupant_found = False
+            # Remove entirely if they join AFTER this month ends
+            if ts_str:
+                try:
+                    ts = datetime.strptime(ts_str, "%Y-%m-%d").date()
+                    if ts > month_end:
+                        continue
+                except: pass
+
+            row = {"Employee": emp_name}
+            has_active_days = False
             
             for day in range(1, days_in_month + 1):
                 current_date = datetime(y, m, day).date()
+                is_active_today = True
                 
-                active_staff_on_day = None
-                for staff in occupants:
-                    last_day_str = staff.get("last_day", "")
-                    training_start_str = staff.get("training_start", "")
+                # Check if joined yet
+                if ts_str:
+                    try:
+                        ts = datetime.strptime(ts_str, "%Y-%m-%d").date()
+                        if current_date < ts:
+                            is_active_today = False
+                    except: pass
                     
-                    is_valid = True
-                    if training_start_str:
-                        try:
-                            ts = datetime.strptime(training_start_str, "%Y-%m-%d").date()
-                            if current_date < ts:
-                                is_valid = False
-                        except: pass
-                        
-                    if last_day_str:
-                        try:
-                            ld = datetime.strptime(last_day_str, "%Y-%m-%d").date()
-                            if current_date > ld:
-                                is_valid = False
-                        except: pass
-                        
-                    if is_valid:
-                        active_staff_on_day = staff
-                        break
-                
-                if active_staff_on_day:
-                    active_occupant_found = True
+                # Check if already left
+                if ld_str:
+                    try:
+                        ld = datetime.strptime(ld_str, "%Y-%m-%d").date()
+                        if current_date > ld:
+                            is_active_today = False
+                    except: pass
                     
-                    designation = active_staff_on_day.get("designation", "Officer")
+                if is_active_today:
+                    has_active_days = True
                     if designation == "Network Engineer":
                         shift = "G" if current_date.weekday() < 5 else ""
                     else:
                         absolute_day_index = (current_date - ref_date).days
                         shift_idx = (absolute_day_index + (s_idx * 3)) % len(shift_cycle)
                         shift = shift_cycle[shift_idx]
-                        
-                    slot_row[str(day)] = shift if shift is not None else ""
+                    row[str(day)] = shift if shift is not None else ""
                 else:
-                    slot_row[str(day)] = ""
+                    row[str(day)] = "" # Empty for inactive days
             
-            if active_occupant_found:
-                month_data.append(slot_row)
+            if has_active_days or (not ld_str and not ts_str):
+                month_data.append(row)
                 
         if month_data:
             df = pd.DataFrame(month_data)
