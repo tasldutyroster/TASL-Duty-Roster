@@ -21,7 +21,6 @@ BACKUP_DIR = "backups"
 # AUTO-BACKUP HELPER
 # ==============================================================================
 def create_backup(file_path):
-    """Creates a secure backup of the specified file inside the backups directory."""
     if not os.path.exists(file_path):
         return
     try:
@@ -111,30 +110,37 @@ def save_rosters(sheets_dict):
         pickle.dump(sheets_dict, f)
 
 # ==============================================================================
-# CORE ROSTER GENERATOR (SEAMLESS SLOT INHERITANCE FOR REPLACEMENTS)
+# CORE ROSTER GENERATOR (PERMANENT FIXED-SLOT ANCHORING)
 # ==============================================================================
 def generate_infinite_rosters(staff_registry):
     sheets_dict = {}
     shift_cycle = ['B', 'B', '', 'A', 'A', 'G', '', '']
     ref_date = datetime(2025, 11, 1).date()
     
-    # Group staff into persistent slot rows based on explicit replacement mapping
+    # Establish a permanent, immutable slot mapping order based on original creation/registration index
+    # This ensures adding new replacements never re-indexes or shuffles ongoing shift math for existing slots.
     roster_slots = {}
-    sorted_staff = sorted(staff_registry, key=lambda x: x.get('training_start', '2000-01-01'))
     
+    # Separate original/earlier staff to lock their permanent slot indices (0, 1, 2, 3...)
+    base_staff = [s for s in staff_registry if not s.get("replaced_emp")]
+    replacement_staff = [s for s in staff_registry if s.get("replaced_emp")]
+    
+    # Assign permanent base slots
     slot_index = 0
-    for staff in sorted_staff:
+    for staff in base_staff:
+        roster_slots[slot_index] = [staff]
+        slot_index += 1
+        
+    # Assign replacements to their specific target slots based on who they replaced
+    for staff in replacement_staff:
         replaced_emp = staff.get("replaced_emp", "").strip().upper()
-        assigned_to_existing_slot = False
-        
-        if replaced_emp:
-            for s_idx, slot_occupants in roster_slots.items():
-                if any(occ["name"].strip().upper() == replaced_emp for occ in slot_occupants):
-                    roster_slots[s_idx].append(staff)
-                    assigned_to_existing_slot = True
-                    break
-        
-        if not assigned_to_existing_slot:
+        assigned = False
+        for s_idx, occupants in roster_slots.items():
+            if any(occ["name"].strip().upper() == replaced_emp for occ in occupants):
+                roster_slots[s_idx].append(staff)
+                assigned = True
+                break
+        if not assigned:
             roster_slots[slot_index] = [staff]
             slot_index += 1
 
@@ -150,12 +156,8 @@ def generate_infinite_rosters(staff_registry):
         
         month_data = []
         
-        # Process each structural roster slot row
+        # Process each structural roster slot row with fixed s_idx
         for s_idx, occupants in roster_slots.items():
-            month_start = datetime(y, m, 1).date()
-            month_end = datetime(y, m, days_in_month).date()
-            
-            # Build a combined row map for this slot across the month
             slot_row = {"Employee": ""}
             for day in range(1, days_in_month + 1):
                 slot_row[str(day)] = ""
@@ -165,14 +167,11 @@ def generate_infinite_rosters(staff_registry):
             for day in range(1, days_in_month + 1):
                 current_date = datetime(y, m, day).date()
                 
-                # Determine who is active in this specific slot on this specific day
                 active_staff_on_day = None
                 for staff in occupants:
-                    name = staff["name"].strip().upper()
                     last_day_str = staff.get("last_day", "")
                     training_start_str = staff.get("training_start", "")
                     
-                    # Check validity for this specific calendar day
                     is_valid = True
                     if training_start_str:
                         try:
@@ -200,6 +199,7 @@ def generate_infinite_rosters(staff_registry):
                     if designation == "Network Engineer":
                         shift = "G" if current_date.weekday() < 5 else ""
                     else:
+                        # Fixed s_idx guarantees ongoing shifts never distort when new personnel join
                         absolute_day_index = (current_date - ref_date).days
                         shift_idx = (absolute_day_index + (s_idx * 3)) % len(shift_cycle)
                         shift = shift_cycle[shift_idx]
@@ -208,7 +208,6 @@ def generate_infinite_rosters(staff_registry):
                 else:
                     slot_row[str(day)] = ""
             
-            # If someone occupied this slot during this month, add the row
             if active_occupant_found and slot_row["Employee"]:
                 month_data.append(slot_row)
                 
