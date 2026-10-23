@@ -145,4 +145,42 @@ def generate_infinite_rosters():
             
         m_df = pd.DataFrame(month_roster, columns=['Employee'] + dates)
         all_rosters[f"{m_name} {year}"] = m_df
-        total_days_elapsed
+        total_days_elapsed += days_count
+        
+    return all_rosters
+
+def load_rosters():
+    if os.path.exists(ROSTER_STORAGE_PATH):
+        try:
+            return pd.read_pickle(ROSTER_STORAGE_PATH)
+        except Exception:
+            pass
+    return generate_infinite_rosters()
+
+def save_rosters(rosters_dict):
+    pd.to_pickle(rosters_dict, ROSTER_STORAGE_PATH)
+
+def initialize_session():
+    if "current_view" not in st.session_state:
+        st.session_state["current_view"] = "Dashboard"
+    if "roster_sub" not in st.session_state:
+        st.session_state["roster_sub"] = "Calendar Grid"
+    if "settings_sub" not in st.session_state:
+        st.session_state["settings_sub"] = "Staff"
+        
+    if "settings_authenticated" not in st.session_state:
+        st.session_state["settings_authenticated"] = False
+    if "dark_mode" not in st.session_state:
+        st.session_state["dark_mode"] = False
+        
+    if "app_font_size" not in st.session_state:
+        st.session_state["app_font_size"] = "14px"
+        
+    if "banner_b64" not in st.session_state:
+        if os.path.exists(BANNER_CACHE_PATH):
+            try:
+                with open(BANNER_CACHE_PATH, "r", encoding="utf-8") as f:
+                    st.session_state["banner_b64"] = f.read().strip()
+            except Exception:
+                st.session_state["banner_b64"] = None
+        else
