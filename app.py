@@ -1052,42 +1052,41 @@ elif current_view == "AEP":
     st.markdown("##### Current Compliance Status Matrix")
     render_styled_html_table(pd.DataFrame(comp_data))
     
-    if st.session_state.get("settings_authenticated", False):
-        st.write("---")
-        st.markdown("##### Administrative Compliance Updates")
-        for idx, staff in enumerate(st.session_state["staff_registry"]):
-            if staff["status"] == "Active":
-                disp_id = f" ({staff.get('emp_id', '')})" if staff.get('emp_id') else ""
-                with st.expander(f"🪪 {staff['name']}{disp_id} — Compliance Details Update"):
-                    c1, c2, c3 = st.columns(3)
-                    
-                    def parse_date(date_str):
-                        try: return datetime.strptime(date_str, "%Y-%m-%d")
-                        except: return datetime.now()
-                    
-                    with c1:
-                        new_aep_no = st.text_input(f"AEP No:", value=staff.get("aep_no", ""), key=f"trk_aep_no_{idx}")
-                        new_aep_iss = st.date_input(f"AEP Issue Date:", value=parse_date(staff.get("aep_issue")), key=f"trk_aep_iss_{idx}")
-                        new_aep_exp = st.date_input(f"AEP Valid Up to:", value=parse_date(staff.get("aep_expiry")), key=f"trk_aep_exp_{idx}")
-                    
-                    with c2:
-                        new_pcc_exp = st.date_input(f"PCC Valid Up to:", value=parse_date(staff.get("pcc_expiry")), key=f"trk_pcc_{idx}")
-                        new_avsec_d = st.date_input(f"AVSEC Attended Date:", value=parse_date(staff.get("avsec_date")), key=f"trk_avsec_d_{idx}")
-                        new_avsec_exp = st.date_input(f"AVSEC Course Validity:", value=parse_date(staff.get("avsec_validity")), key=f"trk_avsec_v_{idx}")
-                    
-                    with c3:
-                        st.write("")
-                        st.write("")
-                        if st.button("💾 Save Compliance Data", key=f"btn_comp_{idx}", type="primary"):
-                            st.session_state["staff_registry"][idx]["aep_no"] = new_aep_no.strip().upper()
-                            st.session_state["staff_registry"][idx]["aep_issue"] = new_aep_iss.strftime("%Y-%m-%d")
-                            st.session_state["staff_registry"][idx]["aep_expiry"] = new_aep_exp.strftime("%Y-%m-%d")
-                            st.session_state["staff_registry"][idx]["pcc_expiry"] = new_pcc_exp.strftime("%Y-%m-%d")
-                            st.session_state["staff_registry"][idx]["avsec_date"] = new_avsec_d.strftime("%Y-%m-%d")
-                            st.session_state["staff_registry"][idx]["avsec_validity"] = new_avsec_exp.strftime("%Y-%m-%d")
-                            save_staff_registry(st.session_state["staff_registry"])
-                            st.success(f"Compliance dates updated for {staff['name']}!")
-                            st.rerun()
+    st.write("---")
+    st.markdown("##### Administrative Compliance Updates")
+    for idx, staff in enumerate(st.session_state["staff_registry"]):
+        if staff["status"] == "Active":
+            disp_id = f" ({staff.get('emp_id', '')})" if staff.get('emp_id') else ""
+            with st.expander(f"🪪 {staff['name']}{disp_id} — Compliance Details Update"):
+                c1, c2, c3 = st.columns(3)
+                
+                def parse_date(date_str):
+                    try: return datetime.strptime(date_str, "%Y-%m-%d")
+                    except: return datetime.now()
+                
+                with c1:
+                    new_aep_no = st.text_input(f"AEP No:", value=staff.get("aep_no", ""), key=f"trk_aep_no_{idx}")
+                    new_aep_iss = st.date_input(f"AEP Issue Date:", value=parse_date(staff.get("aep_issue")), key=f"trk_aep_iss_{idx}")
+                    new_aep_exp = st.date_input(f"AEP Valid Up to:", value=parse_date(staff.get("aep_expiry")), key=f"trk_aep_exp_{idx}")
+                
+                with c2:
+                    new_pcc_exp = st.date_input(f"PCC Valid Up to:", value=parse_date(staff.get("pcc_expiry")), key=f"trk_pcc_{idx}")
+                    new_avsec_d = st.date_input(f"AVSEC Attended Date:", value=parse_date(staff.get("avsec_date")), key=f"trk_avsec_d_{idx}")
+                    new_avsec_exp = st.date_input(f"AVSEC Course Validity:", value=parse_date(staff.get("avsec_validity")), key=f"trk_avsec_v_{idx}")
+                
+                with c3:
+                    st.write("")
+                    st.write("")
+                    if st.button("💾 Save Compliance Data", key=f"btn_comp_{idx}", type="primary"):
+                        st.session_state["staff_registry"][idx]["aep_no"] = new_aep_no.strip().upper()
+                        st.session_state["staff_registry"][idx]["aep_issue"] = new_aep_iss.strftime("%Y-%m-%d")
+                        st.session_state["staff_registry"][idx]["aep_expiry"] = new_aep_exp.strftime("%Y-%m-%d")
+                        st.session_state["staff_registry"][idx]["pcc_expiry"] = new_pcc_exp.strftime("%Y-%m-%d")
+                        st.session_state["staff_registry"][idx]["avsec_date"] = new_avsec_d.strftime("%Y-%m-%d")
+                        st.session_state["staff_registry"][idx]["avsec_validity"] = new_avsec_exp.strftime("%Y-%m-%d")
+                        save_staff_registry(st.session_state["staff_registry"])
+                        st.success(f"Compliance dates updated for {staff['name']}!")
+                        st.rerun()
 
 # ==============================================================================
 # VIEW 4: SETTINGS & HR MANAGEMENT (Password Protected Admin Portal)
