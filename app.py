@@ -8,10 +8,6 @@ from datetime import datetime
 import io
 import calendar
 
-# Import from our modular files
-from database import *
-from styles import get_app_styles
-
 # ==============================================================================
 # 1. PAGE CONFIGURATION & INITIALIZATION
 # ==============================================================================
@@ -21,6 +17,148 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed",
 )
+
+BANNER_CACHE_PATH = "banner_cache.b64"
+STAFF_STORAGE_PATH = "staff_registry_storage.json"
+ROSTER_STORAGE_PATH = "roster_storage_v2.pkl"  
+SWAP_STORAGE_PATH = "swap_tracking.json"     
+SWAP_META_PATH = "swap_meta_tracking.json"   # Track exact cell-pairs to prevent double-counting quotas
+SETTINGS_PASSWORD = "0477"  
+
+DEFAULT_STAFF = [
+    {"name": "MAHESH PU", "emp_id": "", "designation": "Officer", "aep_no": "", "pcc_expiry": "", "avsec_date": "", "avsec_validity": "", "photo": None, "status": "Active", "last_day": "", "training_start": "", "training_end": "", "aep_issue": "", "aep_expiry": ""},
+    {"name": "AJITH KUMAR S", "emp_id": "", "designation": "Officer", "aep_no": "", "pcc_expiry": "", "avsec_date": "", "avsec_validity": "", "photo": None, "status": "Active", "last_day": "", "training_start": "", "training_end": "", "aep_issue": "", "aep_expiry": ""},
+    {"name": "BALU S", "emp_id": "", "designation": "Officer", "aep_no": "", "pcc_expiry": "", "avsec_date": "", "avsec_validity": "", "photo": None, "status": "Active", "last_day": "", "training_start": "", "training_end": "", "aep_issue": "", "aep_expiry": ""},
+    {"name": "SHINE SAGAR", "emp_id": "", "designation": "Officer", "aep_no": "", "pcc_expiry": "", "avsec_date": "", "avsec_validity": "", "photo": None, "status": "Active", "last_day": "", "training_start": "", "training_end": "", "aep_issue": "", "aep_expiry": ""},
+    {"name": "NAVANEETH T S", "emp_id": "", "designation": "Officer", "aep_no": "", "pcc_expiry": "", "avsec_date": "", "avsec_validity": "", "photo": None, "status": "Active", "last_day": "", "training_start": "", "training_end": "", "aep_issue": "", "aep_expiry": ""},
+    {"name": "AMAL P PRASAD", "emp_id": "", "designation": "Officer", "aep_no": "", "pcc_expiry": "", "avsec_date": "", "avsec_validity": "", "photo": None, "status": "Active", "last_day": "", "training_start": "", "training_end": "", "aep_issue": "", "aep_expiry": ""},
+    {"name": "VACANT", "emp_id": "", "designation": "Officer", "aep_no": "", "pcc_expiry": "", "avsec_date": "", "avsec_validity": "", "photo": None, "status": "Active", "last_day": "", "training_start": "", "training_end": "", "aep_issue": "", "aep_expiry": ""},
+    {"name": "NANDAKISHOR TR", "emp_id": "", "designation": "Officer", "aep_no": "", "pcc_expiry": "", "avsec_date": "", "avsec_validity": "", "photo": None, "status": "Active", "last_day": "", "training_start": "", "training_end": "", "aep_issue": "", "aep_expiry": ""}
+]
+
+def load_staff_registry():
+    if os.path.exists(STAFF_STORAGE_PATH):
+        try:
+            with open(STAFF_STORAGE_PATH, "r", encoding="utf-8") as f:
+                registry = json.load(f)
+                for staff in registry:
+                    if "aep_issue" not in staff: staff["aep_issue"] = ""
+                    if "aep_expiry" not in staff: staff["aep_expiry"] = ""
+                    if "emp_id" not in staff: staff["emp_id"] = ""
+                    if "designation" not in staff: staff["designation"] = "Officer"
+                    if "aep_no" not in staff: staff["aep_no"] = ""
+                    if "pcc_expiry" not in staff: staff["pcc_expiry"] = ""
+                    if "avsec_date" not in staff: staff["avsec_date"] = ""
+                    if "avsec_validity" not in staff: staff["avsec_validity"] = ""
+                return registry
+        except Exception:
+            return DEFAULT_STAFF
+    return DEFAULT_STAFF
+
+def save_staff_registry(registry):
+    with open(STAFF_STORAGE_PATH, "w", encoding="utf-8") as f:
+        json.dump(registry, f, ensure_ascii=False, indent=4)
+
+def load_swaps():
+    if os.path.exists(SWAP_STORAGE_PATH):
+        try:
+            with open(SWAP_STORAGE_PATH, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+def save_swaps(data):
+    with open(SWAP_STORAGE_PATH, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
+
+def load_swap_meta():
+    if os.path.exists(SWAP_META_PATH):
+        try:
+            with open(SWAP_META_PATH, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+def save_swap_meta(data):
+    with open(SWAP_META_PATH, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
+
+def generate_infinite_rosters():
+    staff_list = [s["name"] for s in st.session_state.get("staff_registry", DEFAULT_STAFF) if s["status"] == "Active"]
+    if not staff_list:
+        staff_list = [s["name"] for s in DEFAULT_STAFF]
+        
+    shift_cycle = ['B', 'B', np.nan, 'A', 'A', 'G', np.nan, np.nan]
+    months_list = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
+    
+    def get_days_in_month(year, month_name):
+        month_map = {
+            "January": 31, "February": 29 if (year % 4 == 0 and year % 100 != 0) or (year % 400 == 0) else 28,
+            "March": 31, "April": 30, "May": 31, "June": 30, "July": 31, "August": 31,
+            "September": 30, "October": 31, "November": 30, "December": 31
+        }
+        return month_map.get(month_name, 30)
+
+    target_sequence = [(2025, "November"), (2025, "December")]
+    for y in range(2026, 2031):
+        for m in months_list:
+            target_sequence.append((y, m))
+            
+    all_rosters = {}
+    total_days_elapsed = 0
+    
+    month_to_num = {"January":1, "February":2, "March":3, "April":4, "May":5, "June":6, "July":7, "August":8, "September":9, "October":10, "November":11, "December":12}
+    
+    for year, m_name in target_sequence:
+        days_count = get_days_in_month(year, m_name)
+        dates = [str(d) for d in range(1, days_count + 1)]
+        m_num = month_to_num[m_name]
+        
+        month_roster = []
+        for emp_idx, emp in enumerate(staff_list):
+            emp_row = [emp]
+            base_offset = (7 - emp_idx) % 8
+            
+            designation = "Officer"
+            for s in st.session_state.get("staff_registry", DEFAULT_STAFF):
+                if s["name"] == emp and s["status"] == "Active":
+                    designation = s.get("designation", "Officer")
+                    break
+            
+            for day_idx in range(days_count):
+                day_num = day_idx + 1
+                curr_date = datetime(year, m_num, day_num)
+                weekday = curr_date.weekday()
+                
+                if designation == "Network Engineer":
+                    val = "G" if weekday < 5 else ""
+                else:
+                    absolute_day_index = total_days_elapsed + day_idx
+                    shift_idx = (absolute_day_index + base_offset) % len(shift_cycle)
+                    val = shift_cycle[shift_idx]
+                    val = val if pd.notna(val) else ""
+                    
+                emp_row.append(val)
+            month_roster.append(emp_row)
+            
+        m_df = pd.DataFrame(month_roster, columns=['Employee'] + dates)
+        all_rosters[f"{m_name} {year}"] = m_df
+        total_days_elapsed += days_count
+        
+    return all_rosters
+
+def load_rosters():
+    if os.path.exists(ROSTER_STORAGE_PATH):
+        try:
+            return pd.read_pickle(ROSTER_STORAGE_PATH)
+        except Exception:
+            pass
+    return generate_infinite_rosters()
+
+def save_rosters(rosters_dict):
+    pd.to_pickle(rosters_dict, ROSTER_STORAGE_PATH)
 
 def get_q(key, default):
     try: return st.query_params.get(key, default)
@@ -63,6 +201,8 @@ def initialize_session():
     
     if "swap_data" not in st.session_state:
         st.session_state["swap_data"] = load_swaps()
+    if "swap_meta" not in st.session_state:
+        st.session_state["swap_meta"] = load_swap_meta()
 
 initialize_session()
 
@@ -89,7 +229,7 @@ def nav_settings(sub_name):
     st.rerun()
 
 # ==============================================================================
-# 2. DESIGN SYSTEM & CSS INJECTION
+# 2. DESIGN SYSTEM & CSS
 # ==============================================================================
 is_dark = st.session_state["dark_mode"]
 font_size = st.session_state["app_font_size"]
@@ -111,75 +251,281 @@ else:
         "shadow": "0 4px 16px rgba(0, 0, 0, 0.06)"
     }
 
-st.markdown(get_app_styles(cal_palette, font_size), unsafe_allow_html=True)
+def render_styled_html_table(df, current_month_str=""):
+    """Renders a professional HTML table with swapped shifts highlighted with (S)"""
+    swap_meta = st.session_state.get("swap_meta", {})
+    month_meta = swap_meta.get(current_month_str, {})
+    # Collect all swapped coordinate pairs (emp_name, day_str) for this month
+    swapped_cells = set()
+    for pair_key, meta in month_meta.items():
+        for e, d in meta.get("cells", []):
+            swapped_cells.add((str(e).strip().upper(), str(d).strip()))
 
-def render_styled_html_table(df, month_name=None):
-    """Renders a gorgeous, professional HTML table and safely highlights swapped shifts"""
-    swap_tracking = st.session_state.get("swap_data", {})
-    month_swaps = swap_tracking.get(month_name, {}) if month_name else {}
-
-    if month_name and not df.empty:
-        try:
-            m_date = datetime.strptime(month_name, "%B %Y")
-            valid_rows = []
-            emp_col_n = df.columns[0]
-            for _, row in df.iterrows():
-                emp_n = str(row[emp_col_n]).strip().upper()
-                include_emp = True
-                for s in st.session_state.get("staff_registry", []):
-                    if s["name"].strip().upper() == emp_n and s.get("last_day"):
-                        try:
-                            l_d = datetime.strptime(s["last_day"], "%Y-%m-%d")
-                            if l_d.date() < m_date.date():
-                                include_emp = False
-                        except: pass
-                if include_emp:
-                    valid_rows.append(row)
-            df = pd.DataFrame(valid_rows)
-        except: pass
-    
     html = '<div style="overflow-x: auto; border: 2px solid #000000; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); background-color: #F8FAFC; margin-bottom: 0.5rem;">'
     html += f'<table style="width: 100%; border-collapse: collapse; font-family: \'Plus Jakarta Sans\', sans-serif; font-size: {font_size};">'
     
+    # Header
     html += '<thead><tr style="background-color: #E2E8F0; border-bottom: 2px solid #000000;">'
     for col in df.columns:
         html += f'<th style="padding: 10px 12px; border: 1px solid #000000; color: #000000; font-weight: 800; text-align: left;">{col}</th>'
     html += '</tr></thead>'
     
+    # Body
     html += '<tbody>'
     emp_col_name = df.columns[0]
-    
     for idx, row in df.iterrows():
         row_bg = "#F8FAFC" if idx % 2 == 0 else "#FFFFFF"
         html += f'<tr style="background-color: {row_bg}; transition: background 0.2s ease;">'
+        emp_val = str(row[emp_col_name]).strip().upper()
         
-        emp_name = str(row[emp_col_name]).strip().upper()
-        emp_swapped_dates = month_swaps.get(emp_name, [])
-        if not isinstance(emp_swapped_dates, list):
-            emp_swapped_dates = []
-                
         for col in df.columns:
             val = row[col] if pd.notna(row[col]) else ""
-            val_str = str(val).strip()
-            if val_str == 'nan': val_str = ""
+            cell_str = str(val).strip()
             
-            cell_bg = ""
-            cell_extra = ""
+            # Check if this cell was involved in a swap
+            is_swapped = (col != emp_col_name) and ((emp_val, str(col).strip()) in swapped_cells)
             
-            if col != emp_col_name:
-                col_str = str(col).strip()
-                if val_str in ["LEAVE", "SICK"]:
-                    cell_bg = "background-color: #FEE2E2; color: #DC2626;"
-                elif val_str == "HOLIDAY":
-                    cell_bg = "background-color: #D1FAE5; color: #059669;"
-                elif col_str in emp_swapped_dates:
-                    cell_bg = "background-color: #DBEAFE; color: #1D4ED8;"
-                    cell_extra = ' <span style="font-size:0.75rem; font-weight:800;" title="Swapped Shift">(S)</span>'
-            
-            html += f'<td style="padding: 8px 12px; border: 1px solid #000000; font-weight: 600; {cell_bg}">{val_str}{cell_extra}</td>'
+            if is_swapped:
+                display_val = f"{cell_str}<br><span style='font-size:0.7rem; color:#0066CC; font-weight:800;'>(S)</span>" if cell_str else "<span style='font-size:0.7rem; color:#0066CC; font-weight:800;'>(S)</span>"
+                cell_bg = "background-color: #E0F2FE; border: 2px solid #0066CC;"
+                html += f'<td style="padding: 6px 10px; border: 1px solid #000000; color: #0F172A; font-weight: 700; text-align: center; {cell_bg}">{display_val}</td>'
+            else:
+                html += f'<td style="padding: 8px 12px; border: 1px solid #000000; color: #000000; font-weight: 600;">{cell_str}</td>'
         html += '</tr>'
     html += '</tbody></table></div>'
     st.markdown(html, unsafe_allow_html=True)
+
+st.markdown(f"""
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+    
+    html, body, [class*="css"] {{
+        font-family: 'Plus Jakarta Sans', sans-serif;
+    }}
+    
+    html, body, [class*="css"], .stApp, .stMarkdown p, label p, button p {{
+        font-size: {font_size} !important; 
+    }}
+    
+    .stApp {{
+        background-color: {cal_palette["bg_body"]};
+        color: {cal_palette["text_main"]};
+        animation: fadeIn 0.4s ease-in-out;
+    }}
+    
+    @keyframes fadeIn {{
+        from {{ opacity: 0; transform: translateY(4px); }}
+        to {{ opacity: 1; transform: translateY(0); }}
+    }}
+
+    header[data-testid="stHeader"] {{ display: none !important; }}
+    #MainMenu, footer {{ visibility: hidden !important; }}
+    
+    .block-container {{
+        padding-top: 0.2rem !important;
+        padding-bottom: 1rem !important;
+        max-width: 99% !important;
+    }}
+    
+    div.element-container {{
+        margin-bottom: -0.3rem !important;
+    }}
+
+    label[data-testid="stWidgetLabel"] p, label p, .stMarkdown p {{
+        color: {cal_palette["text_main"]} !important;
+        font-weight: 700 !important;
+        margin-bottom: 2px !important;
+    }}
+
+    .brand-container {{
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 4px 0;
+        white-space: nowrap;
+    }}
+    .brand-title {{
+        font-size: 1.35rem;
+        font-weight: 800;
+        color: {cal_palette["text_main"]};
+    }}
+
+    /* SAFELY FORMATTED INPUT FIELDS TO FIX INVISIBLE TEXT & BLACK THEME BUG */
+    div[data-baseweb="input"],
+    div[data-baseweb="base-input"] {{
+        background-color: #FFFFFF !important;
+        border-radius: 8px !important;
+        border: 1.5px solid #CBD5E1 !important;
+        transition: all 0.2s ease;
+    }}
+    
+    div[data-baseweb="input"]:focus-within,
+    div[data-baseweb="base-input"]:focus-within {{
+        border-color: {cal_palette["accent"]} !important;
+        box-shadow: 0 0 0 2px rgba(0, 102, 204, 0.2) !important;
+    }}
+    
+    input {{
+        color: #0F172A !important;
+        -webkit-text-fill-color: #0F172A !important;
+        background-color: #FFFFFF !important;
+        font-weight: 700 !important;
+        font-size: {font_size} !important;
+    }}
+    
+    div[data-baseweb="calendar"], 
+    div[data-baseweb="calendar"] * {{
+        background-color: #FFFFFF !important;
+        color: #0F172A !important;
+    }}
+    div[data-baseweb="calendar"] [aria-selected="true"],
+    div[data-baseweb="calendar"] [aria-selected="true"] * {{
+        background-color: #0066CC !important;
+        color: #FFFFFF !important;
+    }}
+
+    div[data-testid="stPopoverBody"] {{
+        background-color: #FFFFFF !important;
+        border: 1.5px solid #94A3B8 !important;
+        border-radius: 10px !important;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.15) !important;
+        animation: popIn 0.2s ease-out;
+    }}
+    
+    @keyframes popIn {{
+        from {{ opacity: 0; transform: scale(0.95); }}
+        to {{ opacity: 1; transform: scale(1); }}
+    }}
+
+    div[data-testid="stPopoverBody"] * {{
+        color: #0F172A !important;
+        font-size: {font_size} !important;
+    }}
+
+    /* CARDS & EXPANDERS */
+    [data-testid="stExpander"] summary {{
+        background-color: {cal_palette["card_bg"]} !important; 
+        border: 1px solid {cal_palette["border"]} !important;
+        border-radius: 10px !important;
+        box-shadow: {cal_palette["shadow"]} !important;
+        padding: 0.5rem 0.9rem !important;
+        transition: all 0.2s ease;
+    }}
+    [data-testid="stExpander"] summary:hover {{
+        border-color: {cal_palette["accent"]} !important;
+        transform: translateY(-1px);
+    }}
+    [data-testid="stExpander"] summary p, 
+    [data-testid="stExpander"] summary span {{
+        color: {cal_palette["card_text"]} !important;
+        font-weight: 700 !important;
+        font-size: 1.1rem !important;
+    }}
+
+    /* BUTTONS WITH HOVER ANIMATIONS */
+    button[kind="secondary"] {{
+        background-color: {cal_palette["card_bg"]} !important;
+        border: 1.5px solid {cal_palette["border"]} !important;
+        border-radius: 8px !important;
+        font-weight: 700 !important;
+        padding: 0.45rem 0.9rem !important;
+        box-shadow: {cal_palette["shadow"]} !important;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    }}
+    button[kind="secondary"] p, button[kind="secondary"] div, button[kind="secondary"] span {{
+        color: {cal_palette["card_text"]} !important;
+        font-weight: 700 !important;
+        font-size: {font_size} !important;
+    }}
+    button[kind="secondary"]:hover {{
+        border-color: {cal_palette["accent"]} !important;
+        background-color: #F8FAFC !important;
+        transform: translateY(-2px);
+        box-shadow: 0 6px 16px rgba(0,0,0,0.08) !important;
+    }}
+
+    button[kind="primary"] {{
+        background: linear-gradient(135deg, {cal_palette["accent"]} 0%, #004D99 100%) !important;
+        border: none !important;
+        border-radius: 8px !important;
+        font-weight: 700 !important;
+        padding: 0.45rem 0.9rem !important;
+        box-shadow: 0 4px 14px rgba(0, 102, 204, 0.3) !important;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    }}
+    button[kind="primary"]:hover {{
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(0, 102, 204, 0.4) !important;
+    }}
+    button[kind="primary"] p, button[kind="primary"] div, button[kind="primary"] span {{
+        color: #FFFFFF !important;
+        font-weight: 700 !important;
+        font-size: {font_size} !important;
+    }}
+    
+    .shift-staff-tile {{
+        background-color: {cal_palette["card_bg"]};
+        color: {cal_palette["card_text"]};
+        padding: 12px 16px;
+        border-radius: 12px;
+        border: 1px solid {cal_palette["border"]};
+        font-weight: 600;
+        margin-bottom: 8px;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        box-shadow: {cal_palette["shadow"]};
+        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }}
+    .shift-staff-tile:hover {{
+        transform: translateY(-3px);
+        border-color: {cal_palette["accent"]};
+        box-shadow: 0 10px 25px rgba(0, 102, 204, 0.15);
+    }}
+    .avatar-img {{
+        width: 56px; height: 56px; border-radius: 50%; object-fit: cover; border: 2.5px solid {cal_palette["accent"]};
+        box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+        transition: transform 0.2s ease;
+    }}
+    .shift-staff-tile:hover .avatar-img {{
+        transform: scale(1.05);
+    }}
+
+    .shift-header-box {{
+        background: {cal_palette["bg_surface"]};
+        padding: 10px 14px;
+        border-radius: 10px;
+        border: 1px solid {cal_palette["border"]};
+        border-left: 5px solid {cal_palette["accent"]};
+        margin-bottom: 8px;
+        box-shadow: {cal_palette["shadow"]};
+    }}
+    .shift-title {{
+        font-size: 1.1rem;
+        font-weight: 800;
+        color: {cal_palette["text_main"]};
+        margin: 0;
+    }}
+    .shift-time {{
+        font-size: 0.85rem;
+        font-weight: 700;
+        color: {cal_palette["accent"]};
+        margin-top: 2px;
+    }}
+
+    .banner-wrapper {{
+        width: 100%; border-radius: 12px; overflow: hidden;
+        border: 1px solid {cal_palette["border"]}; margin-bottom: 0.8rem;
+        box-shadow: {cal_palette["shadow"]};
+        animation: fadeIn 0.5s ease;
+    }}
+    .banner-default {{
+        width: 100%; min-height: 90px;
+        background: linear-gradient(135deg, #0A192F 0%, #004D99 50%, {cal_palette["accent"]} 100%);
+        display: flex; flex-direction: column; justify-content: center; padding: 14px 22px; color: #FFFFFF;
+    }}
+</style>
+""", unsafe_allow_html=True)
 
 # ==============================================================================
 # CUSTOM SELECT COMPONENT
@@ -213,7 +559,7 @@ with col_brand:
 nav_views = [
     ("Dashboard", "📊 Live Attendance"),
     ("Duty Roster", "🗓️ Shift Calendar"),
-    ("AEP Tracker", "🪪 AEP"),
+    ("AEP", "🪪 AEP"),
     ("Settings", "⚙️ Settings & HR"),
 ]
 
@@ -280,24 +626,6 @@ if current_view == "Dashboard":
             today_sub = live_df[[emp_col, current_day_int]].dropna(subset=[emp_col]).copy()
             today_sub.columns = ["Employee", "Shift"]
             today_sub["Shift"] = today_sub["Shift"].astype(str).str.strip().str.upper()
-
-            filtered_rows = []
-            for _, r in today_sub.iterrows():
-                emp_n = str(r["Employee"]).strip().upper()
-                is_allowed = True
-                for staff in st.session_state["staff_registry"]:
-                    if staff["name"].strip().upper() == emp_n:
-                        last_day_str = staff.get("last_day", "")
-                        if last_day_str:
-                            try:
-                                l_date = datetime.strptime(last_day_str, "%Y-%m-%d").date()
-                                if dash_date > l_date:
-                                    is_allowed = False
-                            except: pass
-                if is_allowed:
-                    filtered_rows.append(r)
-            
-            today_sub = pd.DataFrame(filtered_rows) if filtered_rows else pd.DataFrame(columns=["Employee", "Shift"])
             
             t_day = today_sub[today_sub["Shift"] == "A"]
             t_gen = today_sub[today_sub["Shift"] == "G"]
@@ -338,6 +666,9 @@ if current_view == "Dashboard":
                 if len(t_night) == 0:
                     st.caption("No attendance recorded")
             
+            # ------------------------------------------------------------------
+            # LEAVE SECTION
+            # ------------------------------------------------------------------
             st.write("---")
             st.markdown("#### 🚫 On Leave / General Holiday Today")
             if len(t_leave) > 0:
@@ -363,20 +694,14 @@ if current_view == "Dashboard":
             else:
                 st.caption("All assigned staff are currently on duty. No leaves reported for this date.")
 
+            # ------------------------------------------------------------------
+            # COMPLIANCE EXPIRY ALERTS (AEP, PCC, AVSEC)
+            # ------------------------------------------------------------------
             today_real_date = datetime.now().date()
             compliance_alerts = []
             
             for staff in st.session_state["staff_registry"]:
-                res_date_str = staff.get('last_day', '')
-                is_active = staff["status"] == "Active"
-                if res_date_str:
-                    try:
-                        res_d = datetime.strptime(res_date_str, "%Y-%m-%d").date()
-                        if today_real_date > res_d:
-                            is_active = False
-                    except: pass
-
-                if is_active:
+                if staff["status"] == "Active":
                     name = staff["name"]
                     emp_id = staff.get("emp_id", "")
                     
@@ -456,7 +781,7 @@ elif current_view == "Duty Roster":
     active_df = sheets_dict[selected_month]
     active_df.columns = [str(c).strip() for c in active_df.columns]
     
-    sub_c1, sub_c2, sub_c3 = st.columns(3)
+    sub_c1, sub_c2, sub_c3, sub_c4 = st.columns(4)
     with sub_c1:
         if st.button("📅 Attendance Grid", use_container_width=True, type="primary" if st.session_state.get("roster_sub") == "Calendar Grid" else "secondary"):
             nav_roster("Calendar Grid")
@@ -466,6 +791,18 @@ elif current_view == "Duty Roster":
     with sub_c3:
         if st.button("🌴 Quota Report", use_container_width=True, type="primary" if st.session_state.get("roster_sub") == "Report" else "secondary"):
             nav_roster("Report")
+    with sub_c4:
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            active_df.to_excel(writer, index=False, sheet_name='Duty_Roster')
+        excel_data = output.getvalue()
+        st.download_button(
+            label="📥 Export Excel",
+            data=excel_data,
+            file_name=f"TASL_Roster_{selected_month.replace(' ', '_')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True
+        )
             
     st.divider()
     curr_roster_sub = st.session_state.get("roster_sub", "Calendar Grid")
@@ -473,7 +810,7 @@ elif current_view == "Duty Roster":
     if curr_roster_sub == "Calendar Grid":
         st.markdown(f"#### Monthly Shift & Attendance Calendar — **{selected_month}**")
         st.caption("A = Day Shift | B = Night Shift | G = General Shift | LEAVE = Ordinary Leave | SICK = Sick Leave | HOLIDAY = General Holiday | (S) = Swapped Shift")
-        render_styled_html_table(active_df, month_name=selected_month)
+        render_styled_html_table(active_df, current_month_str=selected_month)
         
     elif curr_roster_sub == "Actions":
         st.markdown("#### ⚙️ Attendance & Leave Action Center")
@@ -481,7 +818,7 @@ elif current_view == "Duty Roster":
         c_act1, c_act2 = st.columns([2, 3])
         with c_act1:
             current_system_month = datetime.now().strftime("%B %Y")
-            act_month_idx = existing_sheets.index(current_system_month) if current_system_month in existing_sheets else default_idx
+            act_month_idx = existing_sheets.index(current_system_month) if current_system_month in existing_sheets else 0
             act_month = custom_select("Select Month for Action:", existing_sheets, "act_month_sel", icon="🗓️", default_idx=act_month_idx)
         
         act_df = sheets_dict[act_month]
@@ -541,7 +878,6 @@ elif current_view == "Duty Roster":
                         st.success(f"Successfully assigned **General Holiday** to **{sel_emp}** on date **{sel_date} {act_month}**.")
                     else:
                         st.success(f"Successfully assigned **{leave_type}** to **{sel_emp}** on date **{sel_date} {act_month}**!")
-                    st.toast("✅ Leave assigned successfully!", icon="🎉")
                     st.rerun()
                 else:
                     st.error("Employee not found in active roster matrix.")
@@ -568,21 +904,26 @@ elif current_view == "Duty Roster":
                 cal_val2 = st.date_input("Date Person B works for Person A:", value=min_d, min_value=min_d, max_value=max_d, key="sw_d2_cal")
                 swap_date2 = str(cal_val2.day)
             
-            swap_tracking = st.session_state.get("swap_data", {})
-            m_swaps = swap_tracking.setdefault(act_month, {})
-            emp1_swaps_list = m_swaps.setdefault(str(swap_emp1).strip().upper(), [])
-            emp2_swaps_list = m_swaps.setdefault(str(swap_emp2).strip().upper(), [])
+            month_swaps = st.session_state["swap_data"].setdefault(act_month, {})
+            emp1_swaps = month_swaps.get(swap_emp1, 0)
+            emp2_swaps = month_swaps.get(swap_emp2, 0)
             
-            emp1_swaps = len(emp1_swaps_list)
-            emp2_swaps = len(emp2_swaps_list)
-            
-            st.markdown(f"""
-            <div style="background-color: rgba(0, 102, 204, 0.05); border: 1px solid #CBD5E1; padding: 10px 16px; border-radius: 8px; margin-bottom: 12px; font-size:{font_size};">
-                <strong>📊 Live Swap Quota Used for {act_month}:</strong> 
-                <span style="color: #0066CC; font-weight: 800; margin-left: 8px;">{swap_emp1}: {emp1_swaps}/2</span> | 
-                <span style="color: #0066CC; font-weight: 800;">{swap_emp2}: {emp2_swaps}/2</span>
-            </div>
-            """, unsafe_allow_html=True)
+            col_q1, col_q2 = st.columns([4.5, 1.5])
+            with col_q1:
+                st.markdown(f"""
+                <div style="background-color: rgba(0, 102, 204, 0.05); border: 1px solid #CBD5E1; padding: 10px 16px; border-radius: 8px; margin-bottom: 12px; font-size:{font_size};">
+                    <strong>📊 Live Swap Quota Used for {act_month}:</strong> 
+                    <span style="color: #0066CC; font-weight: 800; margin-left: 8px;">{swap_emp1}: {emp1_swaps}/2</span> | 
+                    <span style="color: #0066CC; font-weight: 800;">{swap_emp2}: {emp2_swaps}/2</span>
+                </div>
+                """, unsafe_allow_html=True)
+            with col_q2:
+                if st.button("🔄 Reset Quota", use_container_width=True, help="Reset swap counts to 0 for this month"):
+                    st.session_state["swap_data"][act_month] = {}
+                    st.session_state["swap_meta"][act_month] = {}
+                    save_swaps(st.session_state["swap_data"])
+                    save_swap_meta(st.session_state["swap_meta"])
+                    st.rerun()
             
             val1_A_curr = act_df.loc[act_df[emp_col] == swap_emp1, swap_date1].values[0]
             val1_B_curr = act_df.loc[act_df[emp_col] == swap_emp2, swap_date1].values[0]
@@ -590,11 +931,11 @@ elif current_view == "Duty Roster":
             val2_A_curr = act_df.loc[act_df[emp_col] == swap_emp1, swap_date2].values[0]
             val2_B_curr = act_df.loc[act_df[emp_col] == swap_emp2, swap_date2].values[0]
             
-            s1_a = str(val1_A_curr).strip() if pd.notna(val1_A_curr) and str(val1_A_curr).strip() != 'nan' else "OFF"
-            s1_b = str(val1_B_curr).strip() if pd.notna(val1_B_curr) and str(val1_B_curr).strip() != 'nan' else "OFF"
+            s1_a = val1_A_curr if str(val1_A_curr).strip() else "OFF"
+            s1_b = val1_B_curr if str(val1_B_curr).strip() else "OFF"
             
-            s2_a = str(val2_A_curr).strip() if pd.notna(val2_A_curr) and str(val2_A_curr).strip() != 'nan' else "OFF"
-            s2_b = str(val2_B_curr).strip() if pd.notna(val2_B_curr) and str(val2_B_curr).strip() != 'nan' else "OFF"
+            s2_a = val2_A_curr if str(val2_A_curr).strip() else "OFF"
+            s2_b = val2_B_curr if str(val2_B_curr).strip() else "OFF"
             
             bg_col = "#1E293B" if is_dark else "#F1F5F9"
             txt_col = "#FFFFFF" if is_dark else "#0F172A"
@@ -607,8 +948,8 @@ elif current_view == "Duty Roster":
             </div>
             """, unsafe_allow_html=True)
             
-            if emp1_swaps >= 2:
-                st.error(f"❌ **Swap is not possible. {swap_emp1} has already reached their monthly limit of 2 swaps.**")
+            if emp1_swaps >= 2 or emp2_swaps >= 2:
+                st.error("❌ **Swap is not possible. The monthly limit of 2 swaps has already been reached** by one or both selected employees.")
             else:
                 if st.button("🔄 Execute Shift Swap", type="primary"): 
                     val1_A = act_df.loc[act_df[emp_col] == swap_emp1, swap_date1].values[0]
@@ -616,25 +957,35 @@ elif current_view == "Duty Roster":
                     act_df.loc[act_df[emp_col] == swap_emp1, swap_date1] = val1_B
                     act_df.loc[act_df[emp_col] == swap_emp2, swap_date1] = val1_A
                     
-                    e1_upper = str(swap_emp1).strip().upper()
-                    
-                    if swap_date1 not in m_swaps[e1_upper]: m_swaps[e1_upper].append(swap_date1)
-                    
                     if swap_date1 != swap_date2:
                         val2_A = act_df.loc[act_df[emp_col] == swap_emp1, swap_date2].values[0]
                         val2_B = act_df.loc[act_df[emp_col] == swap_emp2, swap_date2].values[0]
                         act_df.loc[act_df[emp_col] == swap_emp1, swap_date2] = val2_B
                         act_df.loc[act_df[emp_col] == swap_emp2, swap_date2] = val2_A
-                        
-                        if swap_date2 not in m_swaps[e1_upper]: m_swaps[e1_upper].append(swap_date2)
                     
                     st.session_state["sheets_dict"][act_month] = act_df
-                    st.session_state["swap_data"] = swap_tracking
                     save_rosters(st.session_state["sheets_dict"])
-                    save_swaps(swap_tracking)
                     
-                    st.toast(f"✅ Success! Shifts successfully swapped between {swap_emp1} and {swap_emp2}.", icon="🎉")
-                    st.success(f"✅ Shifts successfully swapped between **{swap_emp1}** and **{swap_emp2}**! (Only {swap_emp1}'s quota used)")
+                    # Track swap count as exactly +1 transaction for both employees
+                    month_swaps[swap_emp1] = emp1_swaps + 1
+                    month_swaps[swap_emp2] = emp2_swaps + 1
+                    st.session_state["swap_data"][act_month] = month_swaps
+                    save_swaps(st.session_state["swap_data"])
+                    
+                    # Record cells for visual (S) rendering on both rows
+                    month_meta = st.session_state["swap_meta"].setdefault(act_month, {})
+                    transaction_id = f"{swap_emp1}_{swap_date1}__{swap_emp2}_{swap_date2}"
+                    month_meta[transaction_id] = {
+                        "cells": [
+                            (swap_emp1, swap_date1),
+                            (swap_emp2, swap_date1),
+                            (swap_emp1, swap_date2),
+                            (swap_emp2, swap_date2)
+                        ]
+                    }
+                    save_swap_meta(st.session_state["swap_meta"])
+                    
+                    st.success(f"✅ Shifts successfully swapped between **{swap_emp1}** and **{swap_emp2}**!")
                     st.rerun()
             
     elif curr_roster_sub == "Report":
@@ -671,28 +1022,18 @@ elif current_view == "Duty Roster":
                         "Quota Status": status_str
                     })
             st.success(f"Generated attendance report for interval: **{start_d.strftime('%d %b %Y')}** to **{end_d.strftime('%d %b %Y')}**")
-            render_styled_html_table(pd.DataFrame(report_data))
+            render_styled_html_table(pd.DataFrame(report_data), current_month_str=selected_month)
 
 # ==============================================================================
-# VIEW 3: COMPLIANCE TRACKER (AEP)
+# VIEW 3: AEP (Restricted to Admin/HR or Read-Only based on context)
 # ==============================================================================
-elif current_view == "AEP Tracker":
+elif current_view == "AEP":
     st.subheader("🪪 AEP")
     st.info("Update compliance dates for all personnel. Staff with AEP passes expiring within 45 days will be automatically flagged on the Dashboard.")
     
     comp_data = []
-    today_real_date = datetime.now().date()
     for s in st.session_state["staff_registry"]:
-        res_date_str = s.get('last_day', '')
-        is_active = s["status"] == "Active"
-        if res_date_str:
-            try:
-                res_d = datetime.strptime(res_date_str, "%Y-%m-%d").date()
-                if today_real_date > res_d:
-                    is_active = False
-            except: pass
-
-        if is_active:
+        if s["status"] == "Active":
             comp_data.append({
                 "NAME": s["name"],
                 "DESIGNATION": s.get("designation", "Officer"),
@@ -705,66 +1046,57 @@ elif current_view == "AEP Tracker":
     
     st.markdown("##### Current Compliance Status Matrix")
     render_styled_html_table(pd.DataFrame(comp_data))
-    st.write("---")
     
-    for idx, staff in enumerate(st.session_state["staff_registry"]):
-        res_date_str = staff.get('last_day', '')
-        is_active = staff["status"] == "Active"
-        if res_date_str:
-            try:
-                res_d = datetime.strptime(res_date_str, "%Y-%m-%d").date()
-                if today_real_date > res_d:
-                    is_active = False
-            except: pass
-
-        if is_active:
-            disp_id = f" ({staff.get('emp_id', '')})" if staff.get('emp_id') else ""
-            with st.expander(f"🪪 {staff['name']}{disp_id} — Compliance Details Update"):
-                c1, c2, c3 = st.columns(3)
-                
-                def parse_date(date_str):
-                    try: return datetime.strptime(date_str, "%Y-%m-%d")
-                    except: return datetime.now()
-                
-                with c1:
-                    new_aep_no = st.text_input(f"AEP No:", value=staff.get("aep_no", ""), key=f"trk_aep_no_{idx}")
-                    new_aep_iss = st.date_input(f"AEP Issue Date:", value=parse_date(staff.get("aep_issue")), key=f"trk_aep_iss_{idx}")
-                    new_aep_exp = st.date_input(f"AEP Valid Up to:", value=parse_date(staff.get("aep_expiry")), key=f"trk_aep_exp_{idx}")
-                
-                with c2:
-                    new_pcc_exp = st.date_input(f"PCC Valid Up to:", value=parse_date(staff.get("pcc_expiry")), key=f"trk_pcc_{idx}")
-                    new_avsec_d = st.date_input(f"AVSEC Attended Date:", value=parse_date(staff.get("avsec_date")), key=f"trk_avsec_d_{idx}")
-                    new_avsec_exp = st.date_input(f"AVSEC Course Validity:", value=parse_date(staff.get("avsec_validity")), key=f"trk_avsec_v_{idx}")
-                
-                with c3:
-                    st.write("")
-                    st.write("")
-                    if st.button("💾 Save Compliance Data", key=f"btn_comp_{idx}", type="primary"):
-                        st.session_state["staff_registry"][idx]["aep_no"] = new_aep_no.strip().upper()
-                        st.session_state["staff_registry"][idx]["aep_issue"] = new_aep_iss.strftime("%Y-%m-%d")
-                        st.session_state["staff_registry"][idx]["aep_expiry"] = new_aep_exp.strftime("%Y-%m-%d")
-                        st.session_state["staff_registry"][idx]["pcc_expiry"] = new_pcc_exp.strftime("%Y-%m-%d")
-                        st.session_state["staff_registry"][idx]["avsec_date"] = new_avsec_d.strftime("%Y-%m-%d")
-                        st.session_state["staff_registry"][idx]["avsec_validity"] = new_avsec_exp.strftime("%Y-%m-%d")
-                        save_staff_registry(st.session_state["staff_registry"])
-                        st.toast("✅ Compliance details updated successfully!", icon="💾")
-                        st.success(f"Compliance dates updated for {staff['name']}!")
-                        st.rerun()
+    if st.session_state.get("settings_authenticated", False):
+        st.write("---")
+        st.markdown("##### Administrative Compliance Updates")
+        for idx, staff in enumerate(st.session_state["staff_registry"]):
+            if staff["status"] == "Active":
+                disp_id = f" ({staff.get('emp_id', '')})" if staff.get('emp_id') else ""
+                with st.expander(f"🪪 {staff['name']}{disp_id} — Compliance Details Update"):
+                    c1, c2, c3 = st.columns(3)
+                    
+                    def parse_date(date_str):
+                        try: return datetime.strptime(date_str, "%Y-%m-%d")
+                        except: return datetime.now()
+                    
+                    with c1:
+                        new_aep_no = st.text_input(f"AEP No:", value=staff.get("aep_no", ""), key=f"trk_aep_no_{idx}")
+                        new_aep_iss = st.date_input(f"AEP Issue Date:", value=parse_date(staff.get("aep_issue")), key=f"trk_aep_iss_{idx}")
+                        new_aep_exp = st.date_input(f"AEP Valid Up to:", value=parse_date(staff.get("aep_expiry")), key=f"trk_aep_exp_{idx}")
+                    
+                    with c2:
+                        new_pcc_exp = st.date_input(f"PCC Valid Up to:", value=parse_date(staff.get("pcc_expiry")), key=f"trk_pcc_{idx}")
+                        new_avsec_d = st.date_input(f"AVSEC Attended Date:", value=parse_date(staff.get("avsec_date")), key=f"trk_avsec_d_{idx}")
+                        new_avsec_exp = st.date_input(f"AVSEC Course Validity:", value=parse_date(staff.get("avsec_validity")), key=f"trk_avsec_v_{idx}")
+                    
+                    with c3:
+                        st.write("")
+                        st.write("")
+                        if st.button("💾 Save Compliance Data", key=f"btn_comp_{idx}", type="primary"):
+                            st.session_state["staff_registry"][idx]["aep_no"] = new_aep_no.strip().upper()
+                            st.session_state["staff_registry"][idx]["aep_issue"] = new_aep_iss.strftime("%Y-%m-%d")
+                            st.session_state["staff_registry"][idx]["aep_expiry"] = new_aep_exp.strftime("%Y-%m-%d")
+                            st.session_state["staff_registry"][idx]["pcc_expiry"] = new_pcc_exp.strftime("%Y-%m-%d")
+                            st.session_state["staff_registry"][idx]["avsec_date"] = new_avsec_d.strftime("%Y-%m-%d")
+                            st.session_state["staff_registry"][idx]["avsec_validity"] = new_avsec_exp.strftime("%Y-%m-%d")
+                            save_staff_registry(st.session_state["staff_registry"])
+                            st.success(f"Compliance dates updated for {staff['name']}!")
+                            st.rerun()
 
 # ==============================================================================
-# VIEW 4: SETTINGS & HR MANAGEMENT (Password Protected)
+# VIEW 4: SETTINGS & HR MANAGEMENT (Password Protected Admin Portal)
 # ==============================================================================
 elif current_view == "Settings":
     st.subheader("⚙️ Enterprise System Configuration & HR Suite")
 
     if not st.session_state["settings_authenticated"]:
         st.markdown("### 🔒 Restricted Access")
-        st.info("Please enter the administrator PIN to access Settings and HR Management.")
+        st.info("Please enter the administrator PIN (`0477`) to access Settings and HR Management.")
         pwd_input = st.text_input("Enter Admin PIN:", type="password", key="admin_pin_input")
         if st.button("Unlock Settings", type="primary"):
             if pwd_input == SETTINGS_PASSWORD:
                 st.session_state["settings_authenticated"] = True
-                st.toast("🔓 Admin access unlocked!", icon="✅")
                 st.success("Access granted!")
                 st.rerun()
             else:
@@ -804,17 +1136,6 @@ elif current_view == "Settings":
                 with col_reg3:
                     st.markdown(f'<p style="font-size:{font_size}; font-weight:700; margin-bottom:4px;">Designation (Staff Type):</p>', unsafe_allow_html=True)
                     new_desig = st.radio("Designation", ["Officer", "Network Engineer", "Engineer Incharge"], label_visibility="collapsed")
-                
-                st.markdown("##### Position & Replacement Mapping")
-                col_pos1, col_pos2 = st.columns(2)
-                with col_pos1:
-                    pos_type = st.radio("Is this a new position or a replacement?", ["Completely New Addition", "Replacement for Resigning Staff"])
-                
-                replaced_emp_name = ""
-                if pos_type == "Replacement for Resigning Staff":
-                    with col_pos2:
-                        active_staff_names = [s["name"] for s in st.session_state["staff_registry"]]
-                        replaced_emp_name = st.selectbox("Select the Staff Being Replaced:", [""] + active_staff_names)
                     
                 new_photo = st.file_uploader("Passport Size Photograph (.png, .jpg)", type=["png", "jpg", "jpeg"], key="new_staff_photo")
                 
@@ -838,69 +1159,40 @@ elif current_view == "Settings":
                     
                 if st.button("Register Staff & Initialize Training", type="primary"):
                     if new_name.strip():
-                        if pos_type == "Replacement for Resigning Staff" and not replaced_emp_name:
-                            st.error("Please select the staff member being replaced.")
-                        else:
-                            photo_b64 = None
-                            if new_photo:
-                                b_bytes = new_photo.getvalue()
-                                photo_b64 = f"data:{new_photo.type or 'image/png'};base64,{base64.b64encode(b_bytes).decode('utf-8')}"
-                                
-                            st.session_state["staff_registry"].append({
-                                "name": new_name.strip().upper(),
-                                "emp_id": new_emp_id.strip().upper(),
-                                "designation": new_desig,
-                                "replaced_emp": replaced_emp_name if pos_type == "Replacement for Resigning Staff" else "",
-                                "aep_no": new_aep_n.strip().upper(),
-                                "photo": photo_b64,
-                                "status": "Active",
-                                "last_day": "",
-                                "training_start": t_start.strftime("%Y-%m-%d"),
-                                "training_end": t_end.strftime("%Y-%m-%d"),
-                                "aep_issue": new_aep_iss.strftime("%Y-%m-%d"),
-                                "aep_expiry": new_aep_exp.strftime("%Y-%m-%d"),
-                                "pcc_expiry": new_pcc_exp.strftime("%Y-%m-%d"),
-                                "avsec_date": new_avsec_d.strftime("%Y-%m-%d"),
-                                "avsec_validity": new_avsec_exp.strftime("%Y-%m-%d")
-                            })
-                            save_staff_registry(st.session_state["staff_registry"])
-                            st.toast("🎉 Staff registered successfully!", icon="🚀")
-                            st.success(f"🎉 New personnel **{new_name.strip().upper()}** registered successfully!")
-                            st.rerun()
+                        photo_b64 = None
+                        if new_photo:
+                            b_bytes = new_photo.getvalue()
+                            photo_b64 = f"data:{new_photo.type or 'image/png'};base64,{base64.b64encode(b_bytes).decode('utf-8')}"
+                            
+                        st.session_state["staff_registry"].append({
+                            "name": new_name.strip().upper(),
+                            "emp_id": new_emp_id.strip().upper(),
+                            "designation": new_desig,
+                            "aep_no": new_aep_n.strip().upper(),
+                            "photo": photo_b64,
+                            "status": "Active",
+                            "last_day": "",
+                            "training_start": t_start.strftime("%Y-%m-%d"),
+                            "training_end": t_end.strftime("%Y-%m-%d"),
+                            "aep_issue": new_aep_iss.strftime("%Y-%m-%d"),
+                            "aep_expiry": new_aep_exp.strftime("%Y-%m-%d"),
+                            "pcc_expiry": new_pcc_exp.strftime("%Y-%m-%d"),
+                            "avsec_date": new_avsec_d.strftime("%Y-%m-%d"),
+                            "avsec_validity": new_avsec_exp.strftime("%Y-%m-%d")
+                        })
+                        save_staff_registry(st.session_state["staff_registry"])
+                        st.success(f"🎉 New personnel **{new_name.strip().upper()}** registered successfully!")
+                        st.rerun()
                     else:
                         st.error("Please enter a valid staff name.")
 
             st.divider()
-            
-            # Separate active staff from fully archived past employees
-            today_real_date = datetime.now().date()
-            active_staff_list = []
-            resigned_staff_list = []
+            st.markdown("#### Manage Current Staff (Photos, ID, Resignation)")
             
             for idx, staff in enumerate(st.session_state["staff_registry"]):
-                res_date_str = staff.get('last_day', '')
-                is_actually_resigned = False
-                if res_date_str:
-                    try:
-                        res_d = datetime.strptime(res_date_str, "%Y-%m-%d").date()
-                        if today_real_date > res_d:
-                            is_actually_resigned = True
-                    except: pass
-
-                if staff['status'] == "Resigned" or is_actually_resigned:
-                    resigned_staff_list.append((idx, staff))
-                else:
-                    active_staff_list.append((idx, staff))
-
-            # --- SECTION 1: ACTIVE STAFF ---
-            st.markdown("#### 🟢 Active Staff Matrix")
-            if not active_staff_list:
-                st.info("No active staff currently registered.")
-            
-            for idx, staff in active_staff_list:
                 disp_id = f" ({staff.get('emp_id', '')})" if staff.get('emp_id') else ""
-                
-                with st.expander(f"👤 {staff['name']}{disp_id} — Status: Active"):
+                with st.expander(f"👤 {staff['name']}{disp_id} — Status: {staff['status']}"):
+                    
                     col_n1, col_n2, col_n3 = st.columns([1.5, 1, 1.5])
                     with col_n1:
                         new_edit_name = st.text_input(f"Edit Name:", value=staff['name'], key=f"edit_name_{idx}")
@@ -918,6 +1210,7 @@ elif current_view == "Settings":
                         new_id_clean = new_edit_id.strip().upper()
                         
                         needs_save = False
+                        
                         if new_id_clean != staff.get('emp_id', ''):
                             st.session_state["staff_registry"][idx]["emp_id"] = new_id_clean
                             needs_save = True
@@ -938,7 +1231,6 @@ elif current_view == "Settings":
                             
                         if needs_save:
                             save_staff_registry(st.session_state["staff_registry"])
-                            st.toast("✅ Details updated successfully!", icon="💾")
                             st.success(f"Details updated successfully!")
                             st.rerun()
 
@@ -957,7 +1249,6 @@ elif current_view == "Settings":
                             photo_b64 = f"data:{up_photo.type or 'image/png'};base64,{base64.b64encode(b_bytes).decode('utf-8')}"
                             st.session_state["staff_registry"][idx]["photo"] = photo_b64
                             save_staff_registry(st.session_state["staff_registry"])
-                            st.toast("✅ Photo updated successfully!", icon="📸")
                             st.success(f"✅ Successfully updated photo for {staff['name']}!")
                             st.rerun()
 
@@ -969,53 +1260,16 @@ elif current_view == "Settings":
                     with col_s2:
                         st.write("")
                         st.write("")
-                        if st.button("Save Last Working Day", key=f"btn_res_{idx}", type="secondary"):
-                            formatted_date_str = res_date.strftime("%Y-%m-%d")
-                            parsed_res_date = datetime.strptime(formatted_date_str, "%Y-%m-%d").date()
-                            
-                            is_past = datetime.now().date() > parsed_res_date
-                            current_status = "Resigned" if is_past else "Active"
-                            
-                            st.session_state["staff_registry"][idx]["status"] = current_status
-                            st.session_state["staff_registry"][idx]["last_day"] = formatted_date_str
-                            
+                        if st.button("Mark Resigned", key=f"btn_res_{idx}", type="secondary"):
+                            st.session_state["staff_registry"][idx]["status"] = "Resigned"
+                            st.session_state["staff_registry"][idx]["last_day"] = res_date.strftime("%Y-%m-%d")
                             save_staff_registry(st.session_state["staff_registry"])
-                            st.toast("⚠️ Resignation schedule updated successfully!", icon="ℹ️")
-                            st.success(f"Last working day for {staff['name']} set to {formatted_date_str}.")
+                            st.success(f"Marked {staff['name']} as Resigned.")
                             st.rerun()
 
-            # --- SECTION 2: PREVIOUS / RESIGNED EMPLOYEES ---
-            st.write("---")
-            st.markdown("#### 📁 Previous / Resigned Employees Archive")
-            if not resigned_staff_list:
-                st.caption("No past or archived employees found.")
-            else:
-                for idx, staff in resigned_staff_list:
-                    disp_id = f" ({staff.get('emp_id', '')})" if staff.get('emp_id') else ""
-                    last_d_display = staff.get('last_day', 'N/A')
-                    
-                    with st.expander(f"👤 {staff['name']}{disp_id} — Resigned (Last Working Day: {last_d_display})"):
-                        col_a, col_b = st.columns([1, 4])
-                        with col_a:
-                            if staff.get("photo"):
-                                st.markdown(f'<img src="{staff["photo"]}" class="avatar-img" style="width:60px; height:60px;" />', unsafe_allow_html=True)
-                            else:
-                                st.markdown(f'<div style="width:60px; height:60px; border-radius:50%; background:#64748B; color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:16px;">{staff["name"][:2]}</div>', unsafe_allow_html=True)
-                        with col_b:
-                            st.markdown(f"**Designation:** {staff.get('designation', 'Officer')}")
-                            st.markdown(f"**Employee ID:** {staff.get('emp_id', 'N/A')}")
-                            st.markdown(f"**Last Working Day:** {last_d_display}")
-                            
-                            if st.button(f"🔄 Reactivate Staff ({staff['name']})", key=f"reactivate_{idx}"):
-                                st.session_state["staff_registry"][idx]["status"] = "Active"
-                                st.session_state["staff_registry"][idx]["last_day"] = ""
-                                save_staff_registry(st.session_state["staff_registry"])
-                                st.success(f"Successfully restored {staff['name']} to active staff!")
-                                st.rerun()
-
         elif curr_settings_sub == "ClearLeave":
-            st.markdown("#### 🗑️ Master Revert & Clear Center (All Employees)")
-            st.info("Below is the complete list of all modified shifts (Leaves, Sick days, Holidays, and Swaps) across all employees for the selected month. Click 'Revert' on any item to restore it instantly.")
+            st.markdown("#### 🗑️ Revert or Clear Employee Leave / Holiday / Swaps")
+            st.info("Select a month and employee to view and revert their modified shifts (Leaves, Sick days, Holidays, and Swaps) back to the standard roster.")
             
             existing_sheets_set = list(sheets_dict.keys())
             current_m_str = datetime.now().strftime("%B %Y")
@@ -1025,38 +1279,76 @@ elif current_view == "Settings":
             
             if clr_month:
                 clr_df = sheets_dict[clr_month]
-                emp_col_name = clr_df.columns[0]
-                emp_list = clr_df[emp_col_name].dropna().tolist()
+                clr_emp_list = clr_df[clr_df.columns[0]].dropna().tolist()
                 
-                swap_tracking = st.session_state.get("swap_data", {})
-                m_swaps = swap_tracking.get(clr_month, {})
+                clr_emp = custom_select("Select Employee:", clr_emp_list, "clr_emp_sel", icon="🧑‍💼")
                 
-                total_mods = 0
-                for emp, dates in m_swaps.items():
-                    if dates:
-                        total_mods += len(dates)
-                        st.markdown(f"##### 👤 {emp}")
-                        for d in dates:
-                            col_text, col_btn = st.columns([4.5, 1.5])
-                            with col_text:
-                                st.markdown(f"""
-                                <div style="padding: 8px 12px; border-left: 4px solid #0066CC; background: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 6px; margin-bottom: 6px;">
-                                    <span style="font-size: 1rem; font-weight: 800; color: #0F172A; margin-right: 10px;">Date {d}</span>
-                                    <span style="color: #0066CC; font-weight: 700; font-size: 0.9rem;">Swapped Shift (S)</span>
-                                </div>
-                                """, unsafe_allow_html=True)
-                            with col_btn:
-                                if st.button("🔄 Clear Swap", key=f"rev_swap_{emp}_{d}", use_container_width=True):
-                                    if d in m_swaps[emp]:
-                                        m_swaps[emp].remove(d)
-                                    st.session_state["swap_data"] = swap_tracking
-                                    save_swaps(swap_tracking)
-                                    st.toast(f"✅ Cleared swap on Date {d} for {emp}!", icon="🔄")
-                                    st.success(f"Cleared swap on Date {d} for {emp}!")
-                                    st.rerun()
+                if clr_emp:
+                    st.write("")
+                    st.markdown(f"##### 📝 Modifications for {clr_emp} in {clr_month}")
+                    
+                    base_rosters = generate_infinite_rosters()
+                    base_df = base_rosters.get(clr_month, clr_df)
+                    
+                    emp_idx_curr = clr_df[clr_df[clr_df.columns[0]] == clr_emp].index
+                    emp_idx_base = base_df[base_df[base_df.columns[0]] == clr_emp].index
+                    
+                    if len(emp_idx_curr) > 0 and len(emp_idx_base) > 0:
+                        curr_row = clr_df.loc[emp_idx_curr[0]]
+                        base_row = base_df.loc[emp_idx_base[0]]
+                        date_cols = [str(c) for c in clr_df.columns[1:]]
+                        
+                        modifications = []
+                        for d in date_cols:
+                            if d in base_row.index:
+                                c_val = str(curr_row[d]).strip() if pd.notna(curr_row[d]) else ""
+                                b_val = str(base_row[d]).strip() if pd.notna(base_row[d]) else ""
+                                
+                                if c_val == 'nan': c_val = ""
+                                if b_val == 'nan': b_val = ""
+                                
+                                if c_val != b_val:
+                                    modifications.append((d, b_val, c_val))
+                                    
+                        if not modifications:
+                            st.success(f"✅ No modifications found! **{clr_emp}** is strictly following the base roster for {clr_month}.")
+                        else:
+                            for mod in modifications:
+                                d, b_val, c_val = mod
+                                disp_b = b_val if b_val else "OFF"
+                                disp_c = c_val if c_val else "OFF"
+                                
+                                col_text, col_btn = st.columns([4.5, 1.5])
+                                with col_text:
+                                    st.markdown(f"""
+                                    <div style="padding: 10px 14px; border-left: 4px solid #EF4444; background: #FFFFFF; border: 1px solid #CBD5E1; border-left-color: #EF4444; border-radius: 6px; margin-bottom: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.03);">
+                                        <span style="font-size: 1.1rem; font-weight: 800; color: #0F172A; margin-right: 12px;">Date {d}</span>
+                                        <span style="color: #64748B; font-weight: 600; font-size: 0.95rem;">Original: <span style="text-decoration: line-through;">{disp_b}</span> &nbsp;➔&nbsp; <span style="color: #EF4444; font-weight: 800;">{disp_c}</span></span>
+                                    </div>
+                                    """, unsafe_allow_html=True)
+                                with col_btn:
+                                    st.markdown("<div style='margin-top: 6px;'></div>", unsafe_allow_html=True)
+                                    if st.button("🔄 Revert to Original", key=f"rev_{clr_emp}_{d}", use_container_width=True):
+                                        clr_df.loc[emp_idx_curr[0], d] = b_val if b_val else ""
+                                        st.session_state["sheets_dict"][clr_month] = clr_df
+                                        save_rosters(st.session_state["sheets_dict"])
+                                        st.success(f"Reverted Date {d} for {clr_emp} back to {disp_b}!")
+                                        st.rerun()
 
-                if total_mods == 0:
-                    st.success(f"✅ No active shift swaps found in **{clr_month}**.")
+            st.write("---")
+            st.markdown("#### 🔄 Reset Monthly Swap Quotas")
+            st.caption("If employees are incorrectly showing as having reached their 2-swap limit, use this tool to clear the swap tracking history for a specific month.")
+            
+            swap_reset_month = custom_select("Select Month to Reset Swaps:", existing_sheets_set, "swap_reset_month_sel", icon="🗓️", default_idx=default_m_idx)
+            if st.button("⚠️ Force Reset Swap Quotas for Selected Month", type="secondary"):
+                if "swap_data" in st.session_state:
+                    st.session_state["swap_data"][swap_reset_month] = {}
+                    st.session_state["swap_meta"][swap_reset_month] = {}
+                    save_swaps(st.session_state["swap_data"])
+                    save_swap_meta(st.session_state["swap_meta"])
+                    st.success(f"Swap quotas for {swap_reset_month} have been successfully reset to 0/2 for all employees.")
+                else:
+                    st.info(f"No swap history found for {swap_reset_month}. Employees are currently at 0/2.")
 
         elif curr_settings_sub == "Banner":
             st.markdown("#### App Display Settings & Corporate Banner")
@@ -1096,7 +1388,6 @@ elif current_view == "Settings":
                     st.session_state["banner_b64"] = b_b64
                     with open(BANNER_CACHE_PATH, "w", encoding="utf-8") as f:
                         f.write(b_b64)
-                    st.toast("✅ Banner updated successfully!", icon="🖼️")
                     st.success("Banner updated successfully! Navigating to Dashboard...")
                     navigate_to("Dashboard")
 
@@ -1109,12 +1400,11 @@ elif current_view == "Settings":
             st.write("---")
             
             st.markdown("##### ⚠️ Rebuild Calendar Data Matrix")
-            st.info("Clicking this button will regenerate the base Shift Calendar. Your manual swaps will be safely preserved.")
+            st.error("Clicking this button will completely regenerate the Shift Calendar applying all new Staff Rules (e.g. Network Engineer General shifts). Previous manual shift swaps and leaves marked may be lost.")
             if st.button("🔄 Force Rebuild Roster Data"):
                 if os.path.exists(ROSTER_STORAGE_PATH):
                     os.remove(ROSTER_STORAGE_PATH)
-                st.session_state["sheets_dict"] = generate_infinite_rosters(st.session_state["staff_registry"])
+                st.session_state["sheets_dict"] = generate_infinite_rosters()
                 save_rosters(st.session_state["sheets_dict"])
-                st.toast("🔄 Rosters completely rebuilt!", icon="⚙️")
-                st.success("Rosters safely rebuilt without losing swaps!")
+                st.success("Rosters completely rebuilt applying new Staff rules!")
                 st.rerun()
