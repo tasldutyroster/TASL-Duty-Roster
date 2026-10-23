@@ -976,8 +976,6 @@ elif current_view == "Duty Roster":
                     month_meta = st.session_state["swap_meta"].setdefault(act_month, {})
                     transaction_id = f"{swap_emp1}_{swap_date1}__{swap_emp2}_{swap_date2}"
                     month_meta[transaction_id] = {
-                        "partner": swap_emp2,
-                        "partner2": swap_emp1,
                         "cells": [
                             (swap_emp1, swap_date1),
                             (swap_emp2, swap_date1),
@@ -1270,47 +1268,47 @@ elif current_view == "Settings":
                             st.rerun()
 
         elif curr_settings_sub == "ClearLeave":
-            st.markdown("#### 🗑️ Revert or Clear Employee Leave / Holiday / Swaps")
-            st.info("Select a month and employee to view and revert their modified shifts (Leaves, Sick days, Holidays, and Swaps) back to the standard roster.")
+            st.markdown("#### 🗑️ Master Audit Log: All Staff Leaves & Swaps")
+            st.info("Select a month below to view a complete, step-by-step list of every staff member who took a leave/holiday or made a shift swap, along with their swap partner.")
             
             existing_sheets_set = list(sheets_dict.keys())
             current_m_str = datetime.now().strftime("%B %Y")
             default_m_idx = existing_sheets_set.index(current_m_str) if current_m_str in existing_sheets_set else 0
             
-            clr_month = custom_select("Select Month Roster:", existing_sheets_set, "clr_month_sel", icon="🗓️", default_idx=default_m_idx)
+            clr_month = custom_select("Select Month Roster for Audit:", existing_sheets_set, "clr_month_sel", icon="🗓️", default_idx=default_m_idx)
             
             if clr_month:
                 clr_df = sheets_dict[clr_month]
-                clr_emp_list = clr_df[clr_df.columns[0]].dropna().tolist()
+                emp_col = clr_df.columns[0]
+                emp_list = clr_df[emp_col].dropna().tolist()
+                date_cols = [str(c) for c in clr_df.columns[1:]]
                 
-                clr_emp = custom_select("Select Employee:", clr_emp_list, "clr_emp_sel", icon="🧑‍💼")
+                base_rosters = generate_infinite_rosters()
+                base_df = base_rosters.get(clr_month, clr_df)
                 
-                if clr_emp:
-                    st.write("")
-                    st.markdown(f"##### 📝 Modifications for {clr_emp} in {clr_month}")
-                    
-                    base_rosters = generate_infinite_rosters()
-                    base_df = base_rosters.get(clr_month, clr_df)
-                    
-                    emp_idx_curr = clr_df[clr_df[clr_df.columns[0]] == clr_emp].index
-                    emp_idx_base = base_df[base_df[base_df.columns[0]] == clr_emp].index
+                swap_meta = st.session_state.get("swap_meta", {}).get(clr_month, {})
+                
+                st.write("")
+                st.markdown(f"##### 📋 Complete List of All Modified Shifts & Swaps for **{clr_month}**")
+                
+                total_modifications_found = False
+                
+                for emp in emp_list:
+                    emp_idx_curr = clr_df[clr_df[emp_col] == emp].index
+                    emp_idx_base = base_df[base_df[base_df.columns[0]] == emp].index
                     
                     if len(emp_idx_curr) > 0 and len(emp_idx_base) > 0:
                         curr_row = clr_df.loc[emp_idx_curr[0]]
                         base_row = base_df.loc[emp_idx_base[0]]
-                        date_cols = [str(c) for c in clr_df.columns[1:]]
                         
-                        # Build swap info map for this employee & month
-                        swap_meta = st.session_state.get("swap_meta", {}).get(clr_month, {})
                         swap_details_map = {}
                         for t_id, meta in swap_meta.items():
                             cells = meta.get("cells", [])
-                            # Find if clr_emp is part of this transaction
                             staffs_in_swap = list(set([c[0] for c in cells]))
-                            if clr_emp in staffs_in_swap and len(staffs_in_swap) > 1:
-                                partner = [s for s in staffs_in_swap if s != clr_emp][0]
+                            if emp in staffs_in_swap and len(staffs_in_swap) > 1:
+                                partner = [s for s in staffs_in_swap if s != emp][0]
                                 for e, d in cells:
-                                    if e == clr_emp:
+                                    if e == emp:
                                         swap_details_map[d] = partner
 
                         modifications = []
@@ -1326,32 +1324,40 @@ elif current_view == "Settings":
                                     partner_name = swap_details_map.get(d, None)
                                     modifications.append((d, b_val, c_val, partner_name))
                                     
-                        if not modifications:
-                            st.success(f"✅ No modifications found! **{clr_emp}** is strictly following the base roster for {clr_month}.")
-                        else:
+                        if modifications:
+                            total_modifications_found = True
+                            st.markdown(f"""
+                            <div style="background-color: #FFFFFF; border: 1.5px solid #CBD5E1; border-radius: 10px; padding: 12px 16px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.04);">
+                                <div style="font-size: 1.1rem; font-weight: 800; color: #0F172A; margin-bottom: 8px;">
+                                    👤 {emp}
+                                </div>
+                            """, unsafe_allow_html=True)
+                            
                             for mod in modifications:
                                 d, b_val, c_val, partner_name = mod
                                 disp_b = b_val if b_val else "OFF"
                                 disp_c = c_val if c_val else "OFF"
                                 
-                                partner_badge = f" &nbsp;|&nbsp; <span style='color: #0066CC; font-weight: 700;'>🔄 Swapped with: {partner_name}</span>" if partner_name else ""
+                                partner_badge = f" &nbsp;|&nbsp; <span style='color: #0066CC; font-weight: 800;'>🔄 Swapped with: {partner_name}</span>" if partner_name else ""
                                 
-                                col_text, col_btn = st.columns([4.5, 1.5])
-                                with col_text:
+                                col_info, col_btn = st.columns([4.2, 1.8])
+                                with col_info:
                                     st.markdown(f"""
-                                    <div style="padding: 10px 14px; border-left: 4px solid #EF4444; background: #FFFFFF; border: 1px solid #CBD5E1; border-left-color: #EF4444; border-radius: 6px; margin-bottom: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.03);">
-                                        <span style="font-size: 1.1rem; font-weight: 800; color: #0F172A; margin-right: 12px;">Date {d}</span>
-                                        <span style="color: #64748B; font-weight: 600; font-size: 0.95rem;">Original: <span style="text-decoration: line-through;">{disp_b}</span> &nbsp;➔&nbsp; <span style="color: #EF4444; font-weight: 800;">{disp_c}</span>{partner_badge}</span>
+                                    <div style="padding: 6px 10px; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; margin-bottom: 6px; font-size: {font_size};">
+                                        <strong>Date {d}:</strong> <span style="color: #64748B; text-decoration: line-through;">{disp_b}</span> &nbsp;➔&nbsp; <span style="color: #EF4444; font-weight: 800;">{disp_c}</span>{partner_badge}
                                     </div>
                                     """, unsafe_allow_html=True)
                                 with col_btn:
-                                    st.markdown("<div style='margin-top: 6px;'></div>", unsafe_allow_html=True)
-                                    if st.button("🔄 Revert to Original", key=f"rev_{clr_emp}_{d}", use_container_width=True):
+                                    if st.button("🔄 Revert to Original", key=f"rev_master_{emp}_{d}", use_container_width=True):
                                         clr_df.loc[emp_idx_curr[0], d] = b_val if b_val else ""
                                         st.session_state["sheets_dict"][clr_month] = clr_df
                                         save_rosters(st.session_state["sheets_dict"])
-                                        st.success(f"Reverted Date {d} for {clr_emp} back to {disp_b}!")
+                                        st.success(f"Reverted Date {d} for {emp} back to {disp_b}!")
                                         st.rerun()
+                            st.markdown("</div>", unsafe_allow_html=True)
+                            
+                if not total_modifications_found:
+                    st.success(f"✅ No leaves, holidays, or shift swaps recorded for any staff member in {clr_month}.")
 
             st.write("---")
             st.markdown("#### 🔄 Reset Monthly Swap Quotas")
