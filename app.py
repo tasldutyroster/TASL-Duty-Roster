@@ -22,7 +22,7 @@ BANNER_CACHE_PATH = "banner_cache.b64"
 STAFF_STORAGE_PATH = "staff_registry_storage.json"
 ROSTER_STORAGE_PATH = "roster_storage_v2.pkl"  
 SWAP_STORAGE_PATH = "swap_tracking.json"     
-SWAP_META_PATH = "swap_meta_tracking.json"   # Track exact cell-pairs to prevent double-counting quotas
+SWAP_META_PATH = "swap_meta_tracking.json"   
 SETTINGS_PASSWORD = "0477"  
 
 DEFAULT_STAFF = [
@@ -255,7 +255,6 @@ def render_styled_html_table(df, current_month_str=""):
     """Renders a professional HTML table with swapped shifts highlighted with (S)"""
     swap_meta = st.session_state.get("swap_meta", {})
     month_meta = swap_meta.get(current_month_str, {})
-    # Collect all swapped coordinate pairs (emp_name, day_str) for this month
     swapped_cells = set()
     for pair_key, meta in month_meta.items():
         for e, d in meta.get("cells", []):
@@ -282,7 +281,6 @@ def render_styled_html_table(df, current_month_str=""):
             val = row[col] if pd.notna(row[col]) else ""
             cell_str = str(val).strip()
             
-            # Check if this cell was involved in a swap
             is_swapped = (col != emp_col_name) and ((emp_val, str(col).strip()) in swapped_cells)
             
             if is_swapped:
@@ -350,7 +348,6 @@ st.markdown(f"""
         color: {cal_palette["text_main"]};
     }}
 
-    /* SAFELY FORMATTED INPUT FIELDS TO FIX INVISIBLE TEXT & BLACK THEME BUG */
     div[data-baseweb="input"],
     div[data-baseweb="base-input"] {{
         background-color: #FFFFFF !important;
@@ -402,7 +399,6 @@ st.markdown(f"""
         font-size: {font_size} !important;
     }}
 
-    /* CARDS & EXPANDERS */
     [data-testid="stExpander"] summary {{
         background-color: {cal_palette["card_bg"]} !important; 
         border: 1px solid {cal_palette["border"]} !important;
@@ -422,7 +418,6 @@ st.markdown(f"""
         font-size: 1.1rem !important;
     }}
 
-    /* BUTTONS WITH HOVER ANIMATIONS */
     button[kind="secondary"] {{
         background-color: {cal_palette["card_bg"]} !important;
         border: 1.5px solid {cal_palette["border"]} !important;
@@ -792,15 +787,12 @@ elif current_view == "Duty Roster":
         if st.button("🌴 Quota Report", use_container_width=True, type="primary" if st.session_state.get("roster_sub") == "Report" else "secondary"):
             nav_roster("Report")
     with sub_c4:
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            active_df.to_excel(writer, index=False, sheet_name='Duty_Roster')
-        excel_data = output.getvalue()
+        csv_data = active_df.to_csv(index=False).encode('utf-8')
         st.download_button(
-            label="📥 Export Excel",
-            data=excel_data,
-            file_name=f"TASL_Roster_{selected_month.replace(' ', '_')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            label="📥 Export CSV",
+            data=csv_data,
+            file_name=f"TASL_Roster_{selected_month.replace(' ', '_')}.csv",
+            mime="text/csv",
             use_container_width=True
         )
             
@@ -966,13 +958,11 @@ elif current_view == "Duty Roster":
                     st.session_state["sheets_dict"][act_month] = act_df
                     save_rosters(st.session_state["sheets_dict"])
                     
-                    # Track swap count as exactly +1 transaction for both employees
                     month_swaps[swap_emp1] = emp1_swaps + 1
                     month_swaps[swap_emp2] = emp2_swaps + 1
                     st.session_state["swap_data"][act_month] = month_swaps
                     save_swaps(st.session_state["swap_data"])
                     
-                    # Record cells for visual (S) rendering on both rows
                     month_meta = st.session_state["swap_meta"].setdefault(act_month, {})
                     transaction_id = f"{swap_emp1}_{swap_date1}__{swap_emp2}_{swap_date2}"
                     month_meta[transaction_id] = {
