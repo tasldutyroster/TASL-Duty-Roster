@@ -1268,8 +1268,8 @@ elif current_view == "Settings":
                             st.rerun()
 
         elif curr_settings_sub == "ClearLeave":
-            st.markdown("#### 🗑️ Master Audit Log: All Staff Leaves & Swaps")
-            st.info("Select a month below to view a complete, step-by-step list of every staff member who took a leave/holiday or made a shift swap, along with their swap partner.")
+            st.markdown("#### 🗑️ Master Audit Log: Staff Leaves, Holidays & Swaps")
+            st.info("Select a month below to view a clean list of only the staff members who took leaves, sick days, holidays, or performed shift swaps.")
             
             existing_sheets_set = list(sheets_dict.keys())
             current_m_str = datetime.now().strftime("%B %Y")
@@ -1283,49 +1283,41 @@ elif current_view == "Settings":
                 emp_list = clr_df[emp_col].dropna().tolist()
                 date_cols = [str(c) for c in clr_df.columns[1:]]
                 
-                base_rosters = generate_infinite_rosters()
-                base_df = base_rosters.get(clr_month, clr_df)
-                
                 swap_meta = st.session_state.get("swap_meta", {}).get(clr_month, {})
-                
+                swapped_cell_map = {}
+                for t_id, meta in swap_meta.items():
+                    cells = meta.get("cells", [])
+                    staffs_in_swap = list(set([c[0] for c in cells]))
+                    if len(staffs_in_swap) > 1:
+                        for e, d in cells:
+                            partner = [s for s in staffs_in_swap if s != e][0]
+                            swapped_cell_map[(str(e).strip().upper(), str(d).strip())] = partner
+
                 st.write("")
-                st.markdown(f"##### 📋 Complete List of All Modified Shifts & Swaps for **{clr_month}**")
+                st.markdown(f"##### 📋 Leaves, Holidays & Swaps Log for **{clr_month}**")
                 
-                total_modifications_found = False
+                total_records_found = False
                 
                 for emp in emp_list:
-                    emp_idx_curr = clr_df[clr_df[emp_col] == emp].index
-                    emp_idx_base = base_df[base_df[base_df.columns[0]] == emp].index
-                    
-                    if len(emp_idx_curr) > 0 and len(emp_idx_base) > 0:
-                        curr_row = clr_df.loc[emp_idx_curr[0]]
-                        base_row = base_df.loc[emp_idx_base[0]]
+                    emp_idx = clr_df[clr_df[emp_col] == emp].index
+                    if len(emp_idx) > 0:
+                        curr_row = clr_df.loc[emp_idx[0]]
+                        emp_name_upper = str(emp).strip().upper()
                         
-                        swap_details_map = {}
-                        for t_id, meta in swap_meta.items():
-                            cells = meta.get("cells", [])
-                            staffs_in_swap = list(set([c[0] for c in cells]))
-                            if emp in staffs_in_swap and len(staffs_in_swap) > 1:
-                                partner = [s for s in staffs_in_swap if s != emp][0]
-                                for e, d in cells:
-                                    if e == emp:
-                                        swap_details_map[d] = partner
-
-                        modifications = []
+                        staff_records = []
                         for d in date_cols:
-                            if d in base_row.index:
-                                c_val = str(curr_row[d]).strip() if pd.notna(curr_row[d]) else ""
-                                b_val = str(base_row[d]).strip() if pd.notna(base_row[d]) else ""
+                            val = str(curr_row[d]).strip() if pd.notna(curr_row[d]) else ""
+                            val_upper = val.upper()
+                            
+                            is_leave_status = val_upper in ["LEAVE", "SICK", "HOLIDAY"]
+                            is_swap_status = (emp_name_upper, str(d).strip()) in swapped_cell_map
+                            
+                            if is_leave_status or is_swap_status:
+                                partner_name = swapped_cell_map.get((emp_name_upper, str(d).strip()), None)
+                                staff_records.append((d, val, partner_name))
                                 
-                                if c_val == 'nan': c_val = ""
-                                if b_val == 'nan': b_val = ""
-                                
-                                if c_val != b_val:
-                                    partner_name = swap_details_map.get(d, None)
-                                    modifications.append((d, b_val, c_val, partner_name))
-                                    
-                        if modifications:
-                            total_modifications_found = True
+                        if staff_records:
+                            total_records_found = True
                             st.markdown(f"""
                             <div style="background-color: #FFFFFF; border: 1.5px solid #CBD5E1; border-radius: 10px; padding: 12px 16px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.04);">
                                 <div style="font-size: 1.1rem; font-weight: 800; color: #0F172A; margin-bottom: 8px;">
@@ -1333,30 +1325,34 @@ elif current_view == "Settings":
                                 </div>
                             """, unsafe_allow_html=True)
                             
-                            for mod in modifications:
-                                d, b_val, c_val, partner_name = mod
-                                disp_b = b_val if b_val else "OFF"
-                                disp_c = c_val if c_val else "OFF"
-                                
+                            for rec in staff_records:
+                                d, shift_val, partner_name = rec
+                                type_badge = f"<span style='color: #EF4444; font-weight: 800;'>{shift_val}</span>" if shift_val.upper() in ["LEAVE", "SICK", "HOLIDAY"] else f"<span style='color: #D97706; font-weight: 800;'>SWAP ({shift_val})</span>"
                                 partner_badge = f" &nbsp;|&nbsp; <span style='color: #0066CC; font-weight: 800;'>🔄 Swapped with: {partner_name}</span>" if partner_name else ""
                                 
                                 col_info, col_btn = st.columns([4.2, 1.8])
                                 with col_info:
                                     st.markdown(f"""
                                     <div style="padding: 6px 10px; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; margin-bottom: 6px; font-size: {font_size};">
-                                        <strong>Date {d}:</strong> <span style="color: #64748B; text-decoration: line-through;">{disp_b}</span> &nbsp;➔&nbsp; <span style="color: #EF4444; font-weight: 800;">{disp_c}</span>{partner_badge}
+                                        <strong>Date {d}:</strong> Status: {type_badge}{partner_badge}
                                     </div>
                                     """, unsafe_allow_html=True)
                                 with col_btn:
-                                    if st.button("🔄 Revert to Original", key=f"rev_master_{emp}_{d}", use_container_width=True):
-                                        clr_df.loc[emp_idx_curr[0], d] = b_val if b_val else ""
+                                    if st.button("🔄 Revert to Original", key=f"rev_clean_{emp}_{d}", use_container_width=True):
+                                        # Revert logic: replace with base roster value or empty
+                                        base_rosters = generate_infinite_rosters()
+                                        base_df = base_rosters.get(clr_month, clr_df)
+                                        b_idx = base_df[base_df[base_df.columns[0]] == emp].index
+                                        b_val = str(base_df.loc[b_idx[0], d]).strip() if len(b_idx) > 0 and pd.notna(base_df.loc[b_idx[0], d]) else ""
+                                        
+                                        clr_df.loc[emp_idx[0], d] = b_val if b_val != 'nan' else ""
                                         st.session_state["sheets_dict"][clr_month] = clr_df
                                         save_rosters(st.session_state["sheets_dict"])
-                                        st.success(f"Reverted Date {d} for {emp} back to {disp_b}!")
+                                        st.success(f"Reverted Date {d} for {emp} back to default!")
                                         st.rerun()
                             st.markdown("</div>", unsafe_allow_html=True)
                             
-                if not total_modifications_found:
+                if not total_records_found:
                     st.success(f"✅ No leaves, holidays, or shift swaps recorded for any staff member in {clr_month}.")
 
             st.write("---")
