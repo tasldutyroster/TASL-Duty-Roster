@@ -607,8 +607,8 @@ elif current_view == "Duty Roster":
             </div>
             """, unsafe_allow_html=True)
             
-            if emp1_swaps >= 2 or emp2_swaps >= 2:
-                st.error("❌ **Swap is not possible. The monthly limit of 2 swaps has already been reached** by one or both selected employees.")
+            if emp1_swaps >= 2:
+                st.error(f"❌ **Swap is not possible. {swap_emp1} has already reached their monthly limit of 2 swaps.**")
             else:
                 if st.button("🔄 Execute Shift Swap", type="primary"): 
                     val1_A = act_df.loc[act_df[emp_col] == swap_emp1, swap_date1].values[0]
@@ -617,10 +617,8 @@ elif current_view == "Duty Roster":
                     act_df.loc[act_df[emp_col] == swap_emp2, swap_date1] = val1_A
                     
                     e1_upper = str(swap_emp1).strip().upper()
-                    e2_upper = str(swap_emp2).strip().upper()
                     
                     if swap_date1 not in m_swaps[e1_upper]: m_swaps[e1_upper].append(swap_date1)
-                    if swap_date1 not in m_swaps[e2_upper]: m_swaps[e2_upper].append(swap_date1)
                     
                     if swap_date1 != swap_date2:
                         val2_A = act_df.loc[act_df[emp_col] == swap_emp1, swap_date2].values[0]
@@ -629,7 +627,6 @@ elif current_view == "Duty Roster":
                         act_df.loc[act_df[emp_col] == swap_emp2, swap_date2] = val2_A
                         
                         if swap_date2 not in m_swaps[e1_upper]: m_swaps[e1_upper].append(swap_date2)
-                        if swap_date2 not in m_swaps[e2_upper]: m_swaps[e2_upper].append(swap_date2)
                     
                     st.session_state["sheets_dict"][act_month] = act_df
                     st.session_state["swap_data"] = swap_tracking
@@ -637,7 +634,7 @@ elif current_view == "Duty Roster":
                     save_swaps(swap_tracking)
                     
                     st.toast(f"✅ Success! Shifts successfully swapped between {swap_emp1} and {swap_emp2}.", icon="🎉")
-                    st.success(f"✅ Shifts successfully swapped between **{swap_emp1}** and **{swap_emp2}**!")
+                    st.success(f"✅ Shifts successfully swapped between **{swap_emp1}** and **{swap_emp2}**! (Only {swap_emp1}'s quota used)")
                     st.rerun()
             
     elif curr_roster_sub == "Report":
@@ -1037,87 +1034,4 @@ elif current_view == "Settings":
                 total_mods = 0
                 for emp, dates in m_swaps.items():
                     if dates:
-                        total_mods += len(dates)
-                        st.markdown(f"##### 👤 {emp}")
-                        for d in dates:
-                            col_text, col_btn = st.columns([4.5, 1.5])
-                            with col_text:
-                                st.markdown(f"""
-                                <div style="padding: 8px 12px; border-left: 4px solid #0066CC; background: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 6px; margin-bottom: 6px;">
-                                    <span style="font-size: 1rem; font-weight: 800; color: #0F172A; margin-right: 10px;">Date {d}</span>
-                                    <span style="color: #0066CC; font-weight: 700; font-size: 0.9rem;">Swapped Shift (S)</span>
-                                </div>
-                                """, unsafe_allow_html=True)
-                            with col_btn:
-                                if st.button("🔄 Clear Swap", key=f"rev_swap_{emp}_{d}", use_container_width=True):
-                                    if d in m_swaps[emp]:
-                                        m_swaps[emp].remove(d)
-                                    st.session_state["swap_data"] = swap_tracking
-                                    save_swaps(swap_tracking)
-                                    st.toast(f"✅ Cleared swap on Date {d} for {emp}!", icon="🔄")
-                                    st.success(f"Cleared swap on Date {d} for {emp}!")
-                                    st.rerun()
-
-                if total_mods == 0:
-                    st.success(f"✅ No active shift swaps found in **{clr_month}**.")
-
-        elif curr_settings_sub == "Banner":
-            st.markdown("#### App Display Settings & Corporate Banner")
-            
-            st.markdown("##### 🔠 Global App Font Size")
-            font_options = {"Small": "13px", "Medium": "14px", "Large": "16px", "Extra Large": "18px"}
-            current_font_name = [k for k,v in font_options.items() if v == st.session_state.get("app_font_size", "14px")][0]
-            
-            c_font1, c_font2 = st.columns([1, 2])
-            with c_font1:
-                selected_font_name = custom_select("Select App Font Size:", list(font_options.keys()), "font_size_sel", icon="🔠", default_idx=list(font_options.keys()).index(current_font_name))
-                if font_options[selected_font_name] != st.session_state.get("app_font_size"):
-                    st.session_state["app_font_size"] = font_options[selected_font_name]
-                    st.rerun()
-            
-            st.write("---")
-            
-            st.markdown("##### 🖼️ Dashboard Banner Customization")
-            st.info("Recommended dimensions: 1920×400px. Aspect ratio is strictly preserved.")
-            
-            if st.session_state.get("banner_b64"):
-                st.markdown("**Current Active Banner:**")
-                active_b_src = st.session_state["banner_b64"]
-                if not active_b_src.startswith("data:image"):
-                    active_b_src = f"data:image/png;base64,{active_b_src}"
-                st.markdown(f'<div style="border: 1px solid {cal_palette["border"]}; border-radius: 12px; overflow: hidden; margin-bottom: 12px;"><img src="{active_b_src}" style="width: 100%; height: auto; display: block;" /></div>', unsafe_allow_html=True)
-
-            uploaded_b = st.file_uploader("Upload Corporate Banner Image (.png, .jpg, .jpeg)", type=["png", "jpg", "jpeg"], key="cfg_banner")
-            if uploaded_b is not None:
-                b_bytes = uploaded_b.getvalue()
-                b_b64 = f"data:{uploaded_b.type or 'image/png'};base64,{base64.b64encode(b_bytes).decode('utf-8')}"
-                
-                st.markdown("**New Banner Preview:**")
-                st.markdown(f'<div style="border: 2px dashed {cal_palette["accent"]}; border-radius: 12px; overflow: hidden; padding: 4px; margin-bottom: 12px;"><img src="{b_b64}" style="width: 100%; height: auto; display: block;" /></div>', unsafe_allow_html=True)
-                
-                if st.button("💾 Save Banner to Dashboard", type="primary", use_container_width=True):
-                    st.session_state["banner_b64"] = b_b64
-                    with open(BANNER_CACHE_PATH, "w", encoding="utf-8") as f:
-                        f.write(b_b64)
-                    st.toast("✅ Banner updated successfully!", icon="🖼️")
-                    st.success("Banner updated successfully! Navigating to Dashboard...")
-                    navigate_to("Dashboard")
-
-            if st.session_state.get("banner_b64") and st.button("🗑️ Reset Banner to Default", type="secondary"):
-                st.session_state["banner_b64"] = None
-                if os.path.exists(BANNER_CACHE_PATH):
-                    os.remove(BANNER_CACHE_PATH)
-                st.rerun()
-                
-            st.write("---")
-            
-            st.markdown("##### ⚠️ Rebuild Calendar Data Matrix")
-            st.info("Clicking this button will regenerate the base Shift Calendar. Your manual swaps will be safely preserved.")
-            if st.button("🔄 Force Rebuild Roster Data"):
-                if os.path.exists(ROSTER_STORAGE_PATH):
-                    os.remove(ROSTER_STORAGE_PATH)
-                st.session_state["sheets_dict"] = generate_infinite_rosters(st.session_state["staff_registry"])
-                save_rosters(st.session_state["sheets_dict"])
-                st.toast("🔄 Rosters completely rebuilt!", icon="⚙️")
-                st.success("Rosters safely rebuilt without losing swaps!")
-                st.rerun()
+                        total_mods += len(
