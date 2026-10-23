@@ -367,6 +367,9 @@ st.markdown(f"""
         color: {cal_palette["text_main"]};
     }}
 
+    /* SAFELY FORMATTED INPUT FIELDS TO FIX INVISIBLE TEXT & BLACK THEME BUG */
+    div[data-testid="stDateInput"] div[data-baseweb="base-input"],
+    div[data-testid="stTextInput"] div[data-baseweb="base-input"],
     div[data-baseweb="input"],
     div[data-baseweb="base-input"] {{
         background-color: #FFFFFF !important;
@@ -381,10 +384,12 @@ st.markdown(f"""
         box-shadow: 0 0 0 2px rgba(0, 102, 204, 0.2) !important;
     }}
     
-    input {{
+    input, 
+    input[type="text"], 
+    input[type="password"] {{
         color: #0F172A !important;
         -webkit-text-fill-color: #0F172A !important;
-        background-color: #FFFFFF !important;
+        background-color: #FFFFFF !important; 
         font-weight: 700 !important;
         font-size: {font_size} !important;
     }}
@@ -1339,7 +1344,6 @@ elif current_view == "Settings":
                                     """, unsafe_allow_html=True)
                                 with col_btn:
                                     if st.button("🔄 Revert to Original", key=f"rev_clean_{emp}_{d}", use_container_width=True):
-                                        # Revert logic: replace with base roster value or empty
                                         base_rosters = generate_infinite_rosters()
                                         base_df = base_rosters.get(clr_month, clr_df)
                                         b_idx = base_df[base_df[base_df.columns[0]] == emp].index
