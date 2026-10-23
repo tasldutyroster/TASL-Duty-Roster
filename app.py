@@ -888,22 +888,13 @@ elif current_view == "Duty Roster":
             emp1_swaps = month_swaps.get(swap_emp1, 0)
             emp2_swaps = month_swaps.get(swap_emp2, 0)
             
-            col_q1, col_q2 = st.columns([4.5, 1.5])
-            with col_q1:
-                st.markdown(f"""
-                <div style="background-color: rgba(0, 102, 204, 0.05); border: 1px solid #CBD5E1; padding: 10px 16px; border-radius: 8px; margin-bottom: 12px; font-size:{font_size};">
-                    <strong>📊 Live Swap Quota Used for {act_month}:</strong> 
-                    <span style="color: #0066CC; font-weight: 800; margin-left: 8px;">{swap_emp1}: {emp1_swaps}/2</span> | 
-                    <span style="color: #0066CC; font-weight: 800;">{swap_emp2}: {emp2_swaps}/2</span>
-                </div>
-                """, unsafe_allow_html=True)
-            with col_q2:
-                if st.button("🔄 Reset Quota", use_container_width=True, help="Reset swap counts to 0 for this month"):
-                    st.session_state["swap_data"][act_month] = {}
-                    st.session_state["swap_meta"][act_month] = {}
-                    save_swaps(st.session_state["swap_data"])
-                    save_swap_meta(st.session_state["swap_meta"])
-                    st.rerun()
+            st.markdown(f"""
+            <div style="background-color: rgba(0, 102, 204, 0.05); border: 1px solid #CBD5E1; padding: 10px 16px; border-radius: 8px; margin-bottom: 12px; font-size:{font_size};">
+                <strong>📊 Live Swap Quota Used for {act_month}:</strong> 
+                <span style="color: #0066CC; font-weight: 800; margin-left: 8px;">{swap_emp1}: {emp1_swaps}/2</span> | 
+                <span style="color: #0066CC; font-weight: 800;">{swap_emp2}: {emp2_swaps}/2</span>
+            </div>
+            """, unsafe_allow_html=True)
             
             val1_A_curr = act_df.loc[act_df[emp_col] == swap_emp1, swap_date1].values[0]
             val1_B_curr = act_df.loc[act_df[emp_col] == swap_emp2, swap_date1].values[0]
