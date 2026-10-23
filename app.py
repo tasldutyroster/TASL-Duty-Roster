@@ -7,6 +7,8 @@ import base64
 from datetime import datetime
 import io
 import calendar
+import shutil
+import glob
 
 # ==============================================================================
 # 1. PAGE CONFIGURATION & INITIALIZATION
@@ -23,6 +25,7 @@ STAFF_STORAGE_PATH = "staff_registry_storage.json"
 ROSTER_STORAGE_PATH = "roster_storage_v2.pkl"  
 SWAP_STORAGE_PATH = "swap_tracking.json"     
 SWAP_META_PATH = "swap_meta_tracking.json"   
+BACKUP_DIR = "backups"
 SETTINGS_PASSWORD = "0477"  
 
 DEFAULT_STAFF = [
@@ -35,6 +38,28 @@ DEFAULT_STAFF = [
     {"name": "VACANT", "emp_id": "", "designation": "Officer", "aep_no": "", "pcc_expiry": "", "avsec_date": "", "avsec_validity": "", "photo": None, "status": "Active", "last_day": "", "training_start": "", "training_end": "", "aep_issue": "", "aep_expiry": ""},
     {"name": "NANDAKISHOR TR", "emp_id": "", "designation": "Officer", "aep_no": "", "pcc_expiry": "", "avsec_date": "", "avsec_validity": "", "photo": None, "status": "Active", "last_day": "", "training_start": "", "training_end": "", "aep_issue": "", "aep_expiry": ""}
 ]
+
+def perform_auto_backup():
+    """Automatically creates a timestamped backup folder containing all critical storage files."""
+    try:
+        if not os.path.exists(BACKUP_DIR):
+            os.makedirs(BACKUP_DIR)
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        target_subfolder = os.path.join(BACKUP_DIR, f"backup_{timestamp}")
+        os.makedirs(target_subfolder, exist_ok=True)
+        
+        files_to_backup = [STAFF_STORAGE_PATH, ROSTER_STORAGE_PATH, SWAP_STORAGE_PATH, SWAP_META_PATH, BANNER_CACHE_PATH]
+        for file_path in files_to_backup:
+            if os.path.exists(file_path):
+                shutil.copy(file_path, target_subfolder)
+                
+        all_backups = sorted(glob.glob(os.path.join(BACKUP_DIR, "backup_*")))
+        if len(all_backups) > 10:
+            for old_backup in all_backups[:-10]:
+                shutil.rmtree(old_backup)
+    except Exception:
+        pass
 
 def load_staff_registry():
     if os.path.exists(STAFF_STORAGE_PATH):
@@ -58,6 +83,7 @@ def load_staff_registry():
 def save_staff_registry(registry):
     with open(STAFF_STORAGE_PATH, "w", encoding="utf-8") as f:
         json.dump(registry, f, ensure_ascii=False, indent=4)
+    perform_auto_backup()
 
 def load_swaps():
     if os.path.exists(SWAP_STORAGE_PATH):
@@ -71,6 +97,7 @@ def load_swaps():
 def save_swaps(data):
     with open(SWAP_STORAGE_PATH, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
+    perform_auto_backup()
 
 def load_swap_meta():
     if os.path.exists(SWAP_META_PATH):
@@ -84,6 +111,7 @@ def load_swap_meta():
 def save_swap_meta(data):
     with open(SWAP_META_PATH, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
+    perform_auto_backup()
 
 def generate_infinite_rosters():
     staff_list = [s["name"] for s in st.session_state.get("staff_registry", DEFAULT_STAFF) if s["status"] == "Active"]
@@ -159,6 +187,7 @@ def load_rosters():
 
 def save_rosters(rosters_dict):
     pd.to_pickle(rosters_dict, ROSTER_STORAGE_PATH)
+    perform_auto_backup()
 
 def initialize_session():
     if "current_view" not in st.session_state:
@@ -195,6 +224,8 @@ def initialize_session():
         st.session_state["swap_data"] = load_swaps()
     if "swap_meta" not in st.session_state:
         st.session_state["swap_meta"] = load_swap_meta()
+
+    perform_auto_backup()
 
 initialize_session()
 
@@ -945,6 +976,8 @@ elif current_view == "Duty Roster":
                     month_meta = st.session_state["swap_meta"].setdefault(act_month, {})
                     transaction_id = f"{swap_emp1}_{swap_date1}__{swap_emp2}_{swap_date2}"
                     month_meta[transaction_id] = {
+                        "partner": swap_emp2,
+                        "partner2": swap_emp1,
                         "cells": [
                             (swap_emp1, swap_date1),
                             (swap_emp2, swap_date1),
@@ -1267,6 +1300,19 @@ elif current_view == "Settings":
                         base_row = base_df.loc[emp_idx_base[0]]
                         date_cols = [str(c) for c in clr_df.columns[1:]]
                         
+                        # Build swap info map for this employee & month
+                        swap_meta = st.session_state.get("swap_meta", {}).get(clr_month, {})
+                        swap_details_map = {}
+                        for t_id, meta in swap_meta.items():
+                            cells = meta.get("cells", [])
+                            # Find if clr_emp is part of this transaction
+                            staffs_in_swap = list(set([c[0] for c in cells]))
+                            if clr_emp in staffs_in_swap and len(staffs_in_swap) > 1:
+                                partner = [s for s in staffs_in_swap if s != clr_emp][0]
+                                for e, d in cells:
+                                    if e == clr_emp:
+                                        swap_details_map[d] = partner
+
                         modifications = []
                         for d in date_cols:
                             if d in base_row.index:
@@ -1277,22 +1323,25 @@ elif current_view == "Settings":
                                 if b_val == 'nan': b_val = ""
                                 
                                 if c_val != b_val:
-                                    modifications.append((d, b_val, c_val))
+                                    partner_name = swap_details_map.get(d, None)
+                                    modifications.append((d, b_val, c_val, partner_name))
                                     
                         if not modifications:
                             st.success(f"✅ No modifications found! **{clr_emp}** is strictly following the base roster for {clr_month}.")
                         else:
                             for mod in modifications:
-                                d, b_val, c_val = mod
+                                d, b_val, c_val, partner_name = mod
                                 disp_b = b_val if b_val else "OFF"
                                 disp_c = c_val if c_val else "OFF"
+                                
+                                partner_badge = f" &nbsp;|&nbsp; <span style='color: #0066CC; font-weight: 700;'>🔄 Swapped with: {partner_name}</span>" if partner_name else ""
                                 
                                 col_text, col_btn = st.columns([4.5, 1.5])
                                 with col_text:
                                     st.markdown(f"""
                                     <div style="padding: 10px 14px; border-left: 4px solid #EF4444; background: #FFFFFF; border: 1px solid #CBD5E1; border-left-color: #EF4444; border-radius: 6px; margin-bottom: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.03);">
                                         <span style="font-size: 1.1rem; font-weight: 800; color: #0F172A; margin-right: 12px;">Date {d}</span>
-                                        <span style="color: #64748B; font-weight: 600; font-size: 0.95rem;">Original: <span style="text-decoration: line-through;">{disp_b}</span> &nbsp;➔&nbsp; <span style="color: #EF4444; font-weight: 800;">{disp_c}</span></span>
+                                        <span style="color: #64748B; font-weight: 600; font-size: 0.95rem;">Original: <span style="text-decoration: line-through;">{disp_b}</span> &nbsp;➔&nbsp; <span style="color: #EF4444; font-weight: 800;">{disp_c}</span>{partner_badge}</span>
                                     </div>
                                     """, unsafe_allow_html=True)
                                 with col_btn:
