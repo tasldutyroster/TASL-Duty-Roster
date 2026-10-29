@@ -1,3 +1,4 @@
 streamlit
 pandas
 numpy
+PyGithub==2.1.1
