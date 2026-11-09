@@ -41,9 +41,10 @@ DEFAULT_STAFF = [
 ]
 
 def push_to_github(file_path):
-    """Automatically commits saved files directly back to your GitHub repo so they survive server reboots."""
+    """Automatically commits saved files back to GitHub with visible error reporting."""
     try:
         if "GITHUB_TOKEN" not in st.secrets:
+            st.error("❌ GITHUB_TOKEN is missing from Streamlit Secrets! Check your spelling in the Streamlit settings.")
             return
             
         token = st.secrets["GITHUB_TOKEN"] 
@@ -59,10 +60,16 @@ def push_to_github(file_path):
         try:
             contents = repo.get_contents(file_name, ref="main")
             repo.update_file(contents.path, f"Auto-sync: {file_name}", content, contents.sha, branch="main")
-        except:
-            repo.create_file(file_name, f"Auto-sync initial: {file_name}", content, branch="main")
+            st.toast(f"✅ Successfully synced {file_name} to GitHub permanently!")
+        except Exception as inner_e:
+            if "404" in str(inner_e):
+                repo.create_file(file_name, f"Auto-sync initial: {file_name}", content, branch="main")
+                st.toast(f"✅ Created and synced {file_name} to GitHub!")
+            else:
+                st.error(f"❌ GitHub Update Error: {str(inner_e)}")
+                
     except Exception as e:
-        pass
+        st.error(f"❌ GitHub Connection Error: {str(e)}")
 
 def perform_auto_backup():
     try:
