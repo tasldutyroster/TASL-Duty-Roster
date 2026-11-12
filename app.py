@@ -785,35 +785,51 @@ if current_view == "Dashboard":
                         
             if compliance_alerts:
                 st.write("---")
-                st.markdown("#### ⚠️ Compliance Expiry Alerts (AEP, PCC & AVSEC)")
+                st.markdown("#### ⚠️ Compliance Expiry Alerts")
                 st.caption("The following personnel have permits, clearances, or courses that are expired or expiring within the next 45 days.")
                 
-                alert_cols = st.columns(3)
-                for i, alert in enumerate(compliance_alerts):
-                    with alert_cols[i % 3]:
-                        emp_name = alert["name"]
-                        e_id = alert["id"]
-                        c_type = alert["type"]
-                        days_left = alert["days"]
-                        avatar = get_staff_photo_html(emp_name)
-                        disp_id = f" <span style='font-size: 0.85rem; color: #64748b;'>({e_id})</span>" if e_id else ""
+                aep_alerts = [a for a in compliance_alerts if a["type"] == "AEP Pass"]
+                pcc_alerts = [a for a in compliance_alerts if a["type"] == "PCC Certificate"]
+                avsec_alerts = [a for a in compliance_alerts if a["type"] == "AVSEC Course"]
+                
+                def render_alert_category(alerts_list, title, icon):
+                    if not alerts_list:
+                        return
                         
-                        if days_left < 0:
-                            color = "#EF4444" 
-                            msg = f"{c_type} expired {abs(days_left)} days ago!"
-                        else:
-                            color = "#F59E0B" 
-                            msg = f"{c_type} expires in {days_left} days"
+                    st.markdown(f"<h5 style='margin-top: 15px; margin-bottom: 10px; color: {cal_palette['text_main']};'>{icon} {title}</h5>", unsafe_allow_html=True)
+                    alert_cols = st.columns(3)
+                    
+                    for i, alert in enumerate(alerts_list):
+                        with alert_cols[i % 3]:
+                            emp_name = alert["name"]
+                            e_id = alert["id"]
+                            c_type = alert["type"]
+                            days_left = alert["days"]
+                            avatar = get_staff_photo_html(emp_name)
+                            disp_id = f" <span style='font-size: 0.85rem; color: #64748b;'>({e_id})</span>" if e_id else ""
                             
-                        st.markdown(f'''
-                        <div class="shift-staff-tile" style="border-left: 4px solid {color}; background-color: rgba(239, 68, 68, 0.03);">
-                            {avatar} 
-                            <div>
-                                <span style="font-size: 1.05rem; font-weight: 800;">{emp_name}</span>{disp_id}<br>
-                                <span style="color: {color}; font-weight: 800; font-size: 0.9rem;">{msg}</span>
+                            if days_left < 0:
+                                color = "#EF4444" 
+                                msg = f"{c_type} expired {abs(days_left)} days ago!"
+                                bg_color = "rgba(239, 68, 68, 0.04)"
+                            else:
+                                color = "#F59E0B" 
+                                msg = f"{c_type} expires in {days_left} days"
+                                bg_color = "rgba(245, 158, 11, 0.04)"
+                                
+                            st.markdown(f'''
+                            <div class="shift-staff-tile" style="border-left: 4px solid {color}; background-color: {bg_color};">
+                                {avatar} 
+                                <div>
+                                    <span style="font-size: 1.05rem; font-weight: 800;">{emp_name}</span>{disp_id}<br>
+                                    <span style="color: {color}; font-weight: 800; font-size: 0.9rem;">{msg}</span>
+                                </div>
                             </div>
-                        </div>
-                        ''', unsafe_allow_html=True)
+                            ''', unsafe_allow_html=True)
+
+                render_alert_category(aep_alerts, "AEP Pass Expirations", "🪪")
+                render_alert_category(pcc_alerts, "PCC Certificate Expirations", "📜")
+                render_alert_category(avsec_alerts, "AVSEC Course Expirations", "✈️")
                 
         else:
             st.warning(f"⚠️ Selected date column ({current_day_int}) not found in the matrix.")
