@@ -1147,7 +1147,7 @@ elif current_view == "Settings":
 
     if not st.session_state["settings_authenticated"]:
         st.markdown("### 🔒 Restricted Access")
-        st.info("Please enter the administrator PIN (`0477`) to access Settings and HR Management.")
+        st.info("Please enter the administrator PIN to access Settings and HR Management.")
         pwd_input = st.text_input("Enter Admin PIN:", type="password", key="admin_pin_input")
         if st.button("Unlock Settings", type="primary"):
             if pwd_input == SETTINGS_PASSWORD:
