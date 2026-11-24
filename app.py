@@ -1180,7 +1180,26 @@ elif current_view == "Settings":
 
         if curr_settings_sub == "Staff":
             st.markdown("#### Staff Registry, Passport Photos & Training Handover Overlap")
-            
+
+            def is_month_on_or_after(month_str, ref_date):
+                try:
+                    m_dt = datetime.strptime(month_str, "%B %Y")
+                    return (m_dt.year, m_dt.month) >= (ref_date.year, ref_date.month)
+                except Exception:
+                    return True
+
+            curr_m_key = datetime.now().strftime("%B %Y")
+            curr_m_df = st.session_state["sheets_dict"].get(curr_m_key)
+            replace_options = ["None (Add as New Staff)"]
+            if curr_m_df is not None:
+                curr_emps = curr_m_df["Employee"].dropna().astype(str).str.strip().str.upper().tolist()
+                if "VACANT" in curr_emps:
+                    replace_options.append("VACANT")
+                for s in st.session_state["staff_registry"]:
+                    s_name = s["name"].strip().upper()
+                    if s["status"] == "Resigned" and s_name in curr_emps and s_name not in replace_options:
+                        replace_options.append(s_name)
+
             with st.expander("➕ Register New Joinee / Replacement Staff", expanded=False):
                 st.markdown("##### Basic Details")
                 col_reg1, col_reg2, col_reg3 = st.columns(3)
@@ -1191,12 +1210,19 @@ elif current_view == "Settings":
                 with col_reg3:
                     st.markdown(f'<p style="font-size:{font_size}; font-weight:700; margin-bottom:4px;">Designation (Staff Type):</p>', unsafe_allow_html=True)
                     new_desig = st.radio("Designation", ["Officer", "Network Engineer", "Engineer Incharge"], label_visibility="collapsed")
-                    
+
+                replace_slot = custom_select(
+                    "🔄 Replace Vacant / Resigned Slot in Roster:",
+                    replace_options,
+                    "new_staff_replace_slot",
+                    icon="🔄"
+                )
+
                 new_photo = st.file_uploader("Passport Size Photograph (.png, .jpg)", type=["png", "jpg", "jpeg"], key="new_staff_photo")
                 
                 col_h1, col_h2 = st.columns(2)
                 with col_h1:
-                    t_start = st.date_input("Training Start Date (Overlap):", value=datetime.now(), key="new_t_start")
+                    t_start = st.date_input("Training Start Date / Effective Month:", value=datetime.now(), key="new_t_start")
                 with col_h2:
                     t_end = st.date_input("Training End Date (Full Integration):", value=datetime.now(), key="new_t_end")
                 
@@ -1214,13 +1240,14 @@ elif current_view == "Settings":
                     
                 if st.button("Register Staff & Initialize Training", type="primary"):
                     if new_name.strip():
+                        new_name_clean = new_name.strip().upper()
                         photo_b64 = None
                         if new_photo:
                             b_bytes = new_photo.getvalue()
                             photo_b64 = f"data:{new_photo.type or 'image/png'};base64,{base64.b64encode(b_bytes).decode('utf-8')}"
-                            
-                        st.session_state["staff_registry"].append({
-                            "name": new_name.strip().upper(),
+
+                        new_record = {
+                            "name": new_name_clean,
                             "emp_id": new_emp_id.strip().upper(),
                             "designation": new_desig,
                             "aep_no": new_aep_n.strip().upper(),
@@ -1234,9 +1261,31 @@ elif current_view == "Settings":
                             "pcc_expiry": new_pcc_exp.strftime("%Y-%m-%d"),
                             "avsec_date": new_avsec_d.strftime("%Y-%m-%d"),
                             "avsec_validity": new_avsec_exp.strftime("%Y-%m-%d")
-                        })
+                        }
+
+                        replaced_in_registry = False
+                        if replace_slot == "VACANT":
+                            for r_idx, r_staff in enumerate(st.session_state["staff_registry"]):
+                                if r_staff["name"].strip().upper() == "VACANT" and r_staff["status"] == "Active":
+                                    st.session_state["staff_registry"][r_idx] = new_record
+                                    replaced_in_registry = True
+                                    break
+                        if not replaced_in_registry:
+                            st.session_state["staff_registry"].append(new_record)
+
                         save_staff_registry(st.session_state["staff_registry"])
-                        st.success(f"🎉 New personnel **{new_name.strip().upper()}** registered successfully!")
+
+                        if replace_slot != "None (Add as New Staff)":
+                            for m_key, df in st.session_state["sheets_dict"].items():
+                                if is_month_on_or_after(m_key, t_start):
+                                    matches = df[df["Employee"].astype(str).str.strip().str.upper() == replace_slot].index
+                                    if len(matches) > 0:
+                                        df.loc[matches[0], "Employee"] = new_name_clean
+                                        st.session_state["sheets_dict"][m_key] = df
+                            save_rosters(st.session_state["sheets_dict"])
+                            st.success(f"🎉 **{new_name_clean}** registered and replaced **{replace_slot}** in the roster!")
+                        else:
+                            st.success(f"🎉 New personnel **{new_name_clean}** registered successfully!")
                         st.rerun()
                     else:
                         st.error("Please enter a valid staff name.")
@@ -1311,15 +1360,30 @@ elif current_view == "Settings":
                     
                     col_s1, col_s2 = st.columns(2)
                     with col_s1:
-                        res_date = st.date_input(f"Last Working Day (Resignation):", key=f"resign_{idx}", value=datetime.now() if not staff['last_day'] else datetime.strptime(staff['last_day'], "%Y-%m-%d"))
+                        res_date = st.date_input(
+                            f"Last Working Day (Resignation):",
+                            key=f"resign_{idx}",
+                            value=datetime.now() if not staff['last_day'] else datetime.strptime(staff['last_day'], "%Y-%m-%d")
+                        )
                     with col_s2:
                         st.write("")
                         st.write("")
-                        if st.button("Mark Resigned", key=f"btn_res_{idx}", type="secondary"):
+                        btn_label = "🔄 Convert to VACANT in Roster" if staff["status"] == "Resigned" else "Mark Resigned"
+                        if st.button(btn_label, key=f"btn_res_{idx}", type="secondary"):
+                            old_emp_name = staff["name"].strip().upper()
                             st.session_state["staff_registry"][idx]["status"] = "Resigned"
                             st.session_state["staff_registry"][idx]["last_day"] = res_date.strftime("%Y-%m-%d")
                             save_staff_registry(st.session_state["staff_registry"])
-                            st.success(f"Marked {staff['name']} as Resigned.")
+
+                            for m_key, df in st.session_state["sheets_dict"].items():
+                                if is_month_on_or_after(m_key, res_date):
+                                    matches = df[df["Employee"].astype(str).str.strip().str.upper() == old_emp_name].index
+                                    if len(matches) > 0:
+                                        df.loc[matches, "Employee"] = "VACANT"
+                                        st.session_state["sheets_dict"][m_key] = df
+                            save_rosters(st.session_state["sheets_dict"])
+
+                            st.success(f"Marked {staff['name']} as Resigned and updated their roster slot to VACANT.")
                             st.rerun()
 
         elif curr_settings_sub == "ClearLeave":
