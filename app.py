@@ -1290,6 +1290,80 @@ elif current_view == "Settings":
                     else:
                         st.error("Please enter a valid staff name.")
 
+            with st.expander("🔄 Replace Roster Slot / Swap Shift Pairs (Existing Staff)", expanded=True):
+                slot_action = st.radio(
+                    "Select Action:",
+                    ["Replace a Roster Slot", "Swap Shift Pairs (2 Employees)"],
+                    horizontal=True,
+                    key="slot_action_mode"
+                )
+
+                active_staff_names = [
+                    s["name"].strip().upper()
+                    for s in st.session_state["staff_registry"]
+                    if s["status"] == "Active" and s["name"].strip().upper() != "VACANT"
+                ]
+                roster_slot_names = []
+                if curr_m_df is not None:
+                    roster_slot_names = list(dict.fromkeys(
+                        curr_m_df["Employee"].dropna().astype(str).str.strip().str.upper().tolist()
+                    ))
+
+                if slot_action == "Replace a Roster Slot":
+                    st.caption("Replace any existing slot (VACANT, Resigned, or Active) with an already-registered employee from the effective month onward.")
+                    rc1, rc2, rc3 = st.columns(3)
+                    with rc1:
+                        target_slot = custom_select("Slot in Roster to Replace:", roster_slot_names, "rep_target_slot", icon="📌")
+                    with rc2:
+                        new_holder = custom_select("Assign Existing Employee:", active_staff_names, "rep_new_holder", icon="👤")
+                    with rc3:
+                        rep_eff_date = st.date_input("Effective From Month:", value=datetime.now(), key="rep_eff_date")
+
+                    if st.button("✅ Apply Slot Replacement", type="primary", key="btn_apply_slot_rep"):
+                        if target_slot and new_holder and target_slot != new_holder:
+                            updated_months = 0
+                            for m_key, df in st.session_state["sheets_dict"].items():
+                                if is_month_on_or_after(m_key, rep_eff_date):
+                                    matches = df[df["Employee"].astype(str).str.strip().str.upper() == target_slot].index
+                                    if len(matches) > 0:
+                                        df.loc[matches[0], "Employee"] = new_holder
+                                        st.session_state["sheets_dict"][m_key] = df
+                                        updated_months += 1
+                            save_rosters(st.session_state["sheets_dict"])
+                            st.success(f"✅ Replaced **{target_slot}** with **{new_holder}** across {updated_months} month(s)!")
+                            st.rerun()
+                        else:
+                            st.warning("Please select a different target slot and replacement employee.")
+
+                else:
+                    st.caption("Exchange the complete shift rotations (shift pairs) between any two employees from the effective month onward.")
+                    sc1, sc2, sc3 = st.columns(3)
+                    with sc1:
+                        pair_emp1 = custom_select("Employee / Slot A:", roster_slot_names, "pair_emp1", icon="👤")
+                    with sc2:
+                        pair_emp2_opts = [e for e in roster_slot_names if e != pair_emp1]
+                        pair_emp2 = custom_select("Employee / Slot B:", pair_emp2_opts, "pair_emp2", icon="👤")
+                    with sc3:
+                        swap_eff_date = st.date_input("Effective From Month:", value=datetime.now(), key="pair_swap_eff_date")
+
+                    if st.button("🔄 Swap Shift Pairs", type="primary", key="btn_swap_shift_pairs"):
+                        if pair_emp1 and pair_emp2 and pair_emp1 != pair_emp2:
+                            updated_months = 0
+                            for m_key, df in st.session_state["sheets_dict"].items():
+                                if is_month_on_or_after(m_key, swap_eff_date):
+                                    idx1 = df[df["Employee"].astype(str).str.strip().str.upper() == pair_emp1].index
+                                    idx2 = df[df["Employee"].astype(str).str.strip().str.upper() == pair_emp2].index
+                                    if len(idx1) > 0 and len(idx2) > 0:
+                                        df.loc[idx1[0], "Employee"] = pair_emp2
+                                        df.loc[idx2[0], "Employee"] = pair_emp1
+                                        st.session_state["sheets_dict"][m_key] = df
+                                        updated_months += 1
+                            save_rosters(st.session_state["sheets_dict"])
+                            st.success(f"🔄 Swapped shift pairs between **{pair_emp1}** and **{pair_emp2}** across {updated_months} month(s)!")
+                            st.rerun()
+                        else:
+                            st.warning("Please select two different employees to swap.")
+
             st.divider()
             st.markdown("#### Manage Current Staff (Photos, ID, Resignation)")
             
